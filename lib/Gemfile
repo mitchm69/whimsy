@@ -11,4 +11,5 @@ gem 'pdf-reader'
 # For Travis testing
 group :test do
   gem 'rspec'
+  gem 'whimsy-asf', path: File.expand_path('..', __dir__)
 end

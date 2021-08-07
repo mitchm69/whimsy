@@ -1,8 +1,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-$LOAD_PATH.unshift '/srv/whimsy/lib'
-
 require 'spec_helper'
 require 'whimsy/asf'
 
