@@ -1,6 +1,8 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
+$LOAD_PATH.unshift '/home/travis/build/apache/whimsy/lib'
+
 require 'spec_helper'
 require 'whimsy/asf'
 
