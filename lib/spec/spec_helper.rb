@@ -1,4 +1,4 @@
-$LOAD_PATH.unshift '/srv/whimsy/lib'
+$LOAD_PATH.unshift File.expand_path('..', __dir__) # need relative path for Travis
 
 require 'whimsy/asf'
 require 'whimsy/asf/config' # must be loaded before updating config
