@@ -1,10 +1,4 @@
-require 'rubygems/package_task'
 require 'open3'
-
-spec = eval(File.read('asf.gemspec'))
-Gem::PackageTask.new(spec) do |pkg|
-  pkg.gem_spec = spec
-end
 
 def mkdir_p?(path)
   mkdir_p path unless Dir.exist? path
@@ -50,14 +44,7 @@ task :update, [:command] do |task, args|
     gemlines = Dir['**/Gemfile'].
       map {|file| File.read file}.join.scan(/^\s*gem\s.*/)
 
-    if File.exist? "asf.gemspec"
-      gemlines +=
-        File.read("asf.gemspec").scan(/add_dependency\((.*)\)/).
-        map {|(line)| "gem #{line}"}
-    end
-
     gems = gemlines.map {|line| [line[/['"](.*?)['"]/, 1], line.strip]}.to_h
-    gems['whimsy-asf'].sub! /,.*/, ", path: #{Dir.pwd.inspect}"
 
     # Also need to define version for wunderbar as per the asf.gemspec file
     require 'tmpdir'

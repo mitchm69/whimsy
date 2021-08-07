@@ -1,10 +1,6 @@
 source 'https://rubygems.org'
 
-root = '../../..'
-asf_version = File.read(File.expand_path("#{root}/asf.version", __FILE__)).chomp
-gem 'whimsy-asf', asf_version, path: File.expand_path(root, __FILE__)
-
 gem 'passenger'
-
+gem 'ruby-ldap'
 gem 'mime-types'
 gem 'wunderbar'

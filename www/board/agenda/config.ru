@@ -1,3 +1,5 @@
+$LOAD_PATH.unshift '/srv/whimsy/lib'
+
 require 'whimsy/asf/rack'
 
 require File.expand_path('../main.rb', __FILE__)

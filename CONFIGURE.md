@@ -17,7 +17,6 @@ run either in a local environment or with a webserver.
   - [Wunderbar](https://github.com/rubys/wunderbar) - HTML Generator and CGI application support
   - [Ruby-ldap](https://github.com/bearded/ruby-ldap) - LDAP for Ruby
   - [nokogiri](https://github.com/sparklemotion/nokogiri) - HTML parser for Ruby
-  - Full gem dependencies in `asf.gemspec`
 
 ## Local Clients / Development
 
@@ -40,8 +39,6 @@ Whimsy can be run on a client or in a local container for development use.
   and `/var/log/apache2/error_log`
   
 * **Development setup instructions** are in [DEVELOPMENT.md](DEVELOPMENT.md) and [MACOSX.md](MACOSX.md).
-
-* **whimsy-asf Gem** is a set of the core lib/whimsy/asf model as a normal Gem: [asf.gemspec](asf.gemspec)
   
 * **Tool-specific configurations** can be found in config/ directory  
 
