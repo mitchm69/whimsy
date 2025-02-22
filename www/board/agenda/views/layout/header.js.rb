@@ -22,6 +22,16 @@ class Header < Vue
 
       _span.clock! "\u231B" if Header.clock_counter > 0
 
+      if @@banner # is there a banner?
+        if @@banner['href'] # is there a link?
+          _div.navbar_brand {
+            _a @@banner['msg'], href: @@banner['href']
+          }
+        else # just show the text
+          _div.navbar_brand @@banner['msg']
+        end
+      end
+
       _ul.nav.nav_pills.navbar_right do
 
         # pending count
@@ -47,7 +57,7 @@ class Header < Vue
 
         elsif @@item.online
           _li.dropdown do
-            _a.dropdown_toggle.info! data_toggle: "dropdown" do
+            _a.dropdown_toggle.info! data_toggle: 'dropdown' do
               _ 'online'
               _b.caret
             end
@@ -61,7 +71,7 @@ class Header < Vue
 
         else
           _li.dropdown do
-            _a.dropdown_toggle.info! data_toggle: "dropdown" do
+            _a.dropdown_toggle.info! data_toggle: 'dropdown' do
               _ 'summary'
               _b.caret
             end
@@ -84,7 +94,7 @@ class Header < Vue
         # 'navigation' dropdown
         #
         _li.dropdown do
-          _a.dropdown_toggle.nav! data_toggle: "dropdown" do
+          _a.dropdown_toggle.nav! data_toggle: 'dropdown' do
             _ 'navigation'
             _b.caret
           end

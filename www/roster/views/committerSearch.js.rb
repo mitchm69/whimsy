@@ -75,7 +75,7 @@ class CommitterSearch < Vue
           _input.form_control autofocus: true, value: @search,
             onInput: self.change
           _span.input_group_addon do
-            _span.glyphicon.glyphicon_user aria_label: "Committer ID or name"
+            _span.glyphicon.glyphicon_user aria_label: 'Committer ID or name'
           end
         end
       end
@@ -119,8 +119,10 @@ class CommitterSearch < Vue
                     _td 'notinavail'
                   end
 
-                  if person.member
+                  if person.asf_member_status == :current
                     _td {_b person.name}
+                  elsif person.asf_member_status
+                    _td { _i "#{person.name} (#{person.asf_member_status})" }
                   else
                     _td person.name
                   end

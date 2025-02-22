@@ -31,9 +31,11 @@ def emit_orgchart(org: {})
   ) do
     _table.table.table_striped do
       _thead do
-        _th 'Title / Role'
-        _th 'Contact, Chair, or Person holding that title'
-        _th 'Website'
+        _tr_ do
+          _th 'Title / Role'
+          _th 'Contact, Chair, or Person holding that title'
+          _th 'Website'
+        end
       end
       _tbody do
         org.sort_by {|key, value| value['info']['role']}.each do |key, value|
@@ -43,11 +45,11 @@ def emit_orgchart(org: {})
             end
             _td do
               id = value['info']['id'] || value['info']['chair']
-              tmp = ASF::Person[id]
-              if tmp.nil?
+              missingid, idnam = _id_to_names(id)
+              if missingid
                 _em id
               else
-                _ tmp.public_name
+                _ idnam
               end
             end
             _td do
@@ -61,15 +63,28 @@ def emit_orgchart(org: {})
   end
 end
 
+def _id_to_names(id)
+  return true, '' if id.nil?
+  ids=[]
+  id = [id].flatten # allows for single id and array
+  missingid = false
+  id.each do |id1|
+    tmp = ASF::Person[id1]
+    if tmp.nil?
+      ids << id1
+      missingid = true
+    else
+      ids << tmp.public_name
+    end
+  end
+  idnam = ids.join(', ')
+  return missingid, idnam
+end
+
 # Output one role's duties and data
 def emit_role(role: {}, oversees: {}, desc: {})
   id = role['info']['id'] || role['info']['chair']
-  tmp = ASF::Person[id]
-  if tmp.nil?
-    idnam = id
-  else
-    idnam = tmp.public_name
-  end
+  missingid, idnam = _id_to_names(id)
   _ol.breadcrumb do
     _li do
       _a 'OrgChart', href: URLROOT
@@ -96,7 +111,7 @@ def emit_role(role: {}, oversees: {}, desc: {})
             end
             if %w(id chair).include? key
               _td do
-                if tmp.nil?
+                if missingid
                   _em idnam
                 else
                   _ idnam
@@ -117,7 +132,7 @@ def emit_role(role: {}, oversees: {}, desc: {})
               _td do
                 _a value, href: "mailto:#{value}"
               end
-            elsif %w(resolution website).include? key
+            elsif %w(resolution website resolution-policy resolution-other reports-board).include? key
               _td do
                 _a value, href: value
               end

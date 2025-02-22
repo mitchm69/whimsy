@@ -41,7 +41,7 @@ def get_survey_root(asfsvn = false)
 end
 
 # Convenience method to sanitize/construct paths to .json
-# @param filename to request, either a layout or datafile
+# @param filename to request a layout
 # @return sanitized path/filename
 def get_survey_path(f)
   filename = f
@@ -100,15 +100,15 @@ def display_survey(survey_layout)
 end
 
 # Validation as needed within the script
-def validate_survey(_formdata: {})
+def validate_survey(formdata: {})
   return true # TODO: Futureuse
 end
 
 # Handle POST submission (checkout survey data, add user's submission, checkin file)
 # @return true if we think it succeeded; false in all other cases
 def submit_survey(formdata: {})
-  filename = get_survey_path(formdata[:datafile])
-  formdata.delete(:datafile) # Remove before generating output
+  filename = formdata.delete(:datafile) # Remove before generating output
+  filename << DOTJSON if not filename.end_with?(DOTJSON)
   submission_data = JSON.pretty_generate(formdata) + "\n"
   _div.well do
     _p.lead "Submitting your survey data to: #{filename}"
@@ -116,18 +116,20 @@ def submit_survey(formdata: {})
   end
 
   rc = 999 # Ensure it's a bogus value
-  Dir.mktmpdir do |tmpdir|
-    ASF::SVN.svn_('checkout',[get_survey_root(), tmpdir],_,{depth: 'files', user: $USER, password: $PASSWORD})
+  _div.transcript do
+    Dir.mktmpdir do |tmpdir|
+      ASF::SVN.svn_!('checkout',[get_survey_root(), tmpdir],_,{depth: 'files', user: $USER, password: $PASSWORD})
+      filename = File.join(tmpdir, filename) # Use the temporary checkout version
+      survey_data = JSON.parse(File.read(filename), :symbolize_names => true)
+      # Add user data (may overwrite existing entry!)
+      survey_data[$USER.to_sym] = formdata
+      # Sort file (to keep diff clean) and write it back
+      survey_data = Hash[survey_data.keys.sort.map {|k| [k, survey_data[k]]}]
 
-    survey_data = JSON.parse(File.read(filename), :symbolize_names => true)
-    # Add user data (may overwrite existing entry!)
-    survey_data[$USER] = formdata
-    # Sort file (to keep diff clean) and write it back
-    survey_data = Hash[survey_data.keys.sort.map {|k| [k, survey_data[k]]}]
-
-    File.write(filename, JSON.pretty_generate(survey_data))
-    Dir.chdir tmpdir do
-      # rc = ASF::SVN.svn_('commit', filename, _, {msg: "Survey submission (whimsy)", user: $USER, password: $PASSWORD})
+      File.write(filename, JSON.pretty_generate(survey_data))
+      Dir.chdir tmpdir do
+        rc = ASF::SVN.svn_!('commit', filename, _, {msg: "Survey submission (via whimsy)", user: $USER, password: $PASSWORD})
+      end
     end
   end
   if rc == 0
@@ -223,4 +225,3 @@ _html do
     end
   end
 end
-

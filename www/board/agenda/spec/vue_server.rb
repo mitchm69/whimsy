@@ -27,6 +27,7 @@ class VueServer
 
     # spawn a server process
     nodejs = (`which nodejs`.empty? ? 'node' : 'nodejs')
+    puts "Vue server is using: '#{nodejs}'"
     @@pid = spawn(nodejs, '-e',
       Ruby2JS.convert(@@server, {ivars: {:@port => @@port}}))
 
@@ -71,7 +72,7 @@ class VueServer
 
   # the server itself
   @@server = proc do
-    _cleanup = require("jsdom-global/register")
+    _cleanup = require('jsdom-global/register')
     delete global.XMLHttpRequest
 
     process.env.VUE_ENV = 'server'
@@ -132,7 +133,7 @@ class VueServer
       end
 
       request.on 'error' do |error|
-        console.log "VueServer error: #{error.message}"
+        console.error "VueServer error: #{error.message}"
       end
 
       request.on 'end' do
@@ -150,7 +151,7 @@ class VueServer
   end
 end
 
-shared_context "vue_server", server: :vue do
+shared_context 'vue_server', server: :vue do
   #
   # administrivia
   #

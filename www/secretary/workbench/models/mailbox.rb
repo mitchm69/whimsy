@@ -1,15 +1,16 @@
-
+#
 # Encapsulate access to mailboxes
 #
+# N.B. this module is included by the deliver script, so needs to be quick to load
 
 require 'zlib'
 require 'zip'
 require 'stringio'
 require 'yaml'
 
-require_relative '../config.rb'
+require_relative '../config'
 
-require_relative 'message.rb'
+require_relative 'message'
 
 class Mailbox
   #
@@ -18,7 +19,7 @@ class Mailbox
   def self.fetch(mailboxes=nil)
     options = %w(-av --no-motd)
 
-    if mailboxes == nil
+    if mailboxes.nil?
       options += %w(--delete --exclude=*.yml --exclude=*.mail)
       source = "#{SOURCE}/"
     elsif mailboxes.is_a? Array
@@ -31,6 +32,24 @@ class Mailbox
 
     Dir.mkdir ARCHIVE unless Dir.exist? ARCHIVE
     system 'rsync', *options, source, "#{ARCHIVE}/"
+  end
+
+  # Get list of mailboxes
+  def self.allmailboxes
+    current = Date.today.strftime('%Y%m.yml') # exclude future-dated entries
+    Dir.entries(ARCHIVE).select{|name| name =~ %r{^\d{6}\.yml$} && name <= current}.map{|n| File.basename n,'.yml'}.sort
+  end
+
+  # get prev and next entries (or nil)
+  def self.prev_next(current)
+    active = self.allmailboxes
+    index = active.find_index current
+    prv = nxt = nil
+    if index
+      prv = active[index - 1] if index > 0
+      nxt = active[index + 1] if index < active.length
+    end
+    return prv, nxt
   end
 
   #
@@ -156,32 +175,46 @@ class Mailbox
   # return headers (server view)
   #
   def headers
-    messages = YAML.load_file(yaml_file) rescue {}
-    messages.delete :mtime
-    messages.each do |key, value|
-      value[:source]=@name
+    messages = YAML.load_file(yaml_file) || {} rescue {}
+    messages.delete :mtime # TODO: is this needed?
+    messages.each do |_key, value|
+      value[:source] = @name
     end
   end
 
   #
-  # return headers (client view)
-  #
-  def client_headers
-    # fetch a list of headers for all messages in the maibox with attachments
-    headers = self.headers.to_a.select do |id, message|
-      not Message.attachments(message).empty?
+  # return headers (client view; only shows messages with attachments)
+  # If :listall is true, then include all entries with an attachments key (even if empty)
+  # (these are messages that originally had attachments)
+  def client_headers(listall: false)
+    if listall
+      # get all headers which ever had attachments
+      headers = self.headers.to_a.reject do |_id, message|
+        message[:attachments].nil?
+      end
+    else
+      # want all active headers
+      headers = self.headers.to_a.reject do |_id, message|
+        # This does not return attachments with status :deleted
+        # also drops irrelevant attachments
+        Message.attachments(message).empty?
+      end
     end
 
     # extract relevant fields from the headers
     headers.map! do |id, message|
-      {
+      entry = {
         time: message[:time] || '',
         href: "#{message[:source]}/#{id}/",
         from: (message[:name] || message[:from]).to_s.fix_encoding,
         date: message['Date'] || '',
-        subject: message['Subject'],
+        subject: (message['Subject'] || '(empty)').to_s.fix_encoding,
         status: message[:status]
       }
+      if message[:secmail]
+        entry[:secmail] = message[:secmail]
+      end
+      entry
     end
 
     # return messages sorted in reverse chronological order
@@ -201,7 +234,7 @@ class Mailbox
       rescue
       end
 
-      if field.value and field.value.valid_encoding?
+      if field.value&.valid_encoding?
         [field.name, field.value]
       else
         [field.name, field.value.inspect]

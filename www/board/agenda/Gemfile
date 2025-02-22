@@ -7,14 +7,15 @@ if File.exist? version_file
   asf_version = File.read(version_file).chomp
   gem 'whimsy-asf', asf_version, path: File.expand_path(root, __FILE__)
 else
-  # for docker purposes (atleast for now)
+  # for docker purposes (at least for now)
   gem 'whimsy-asf'
 end
 
+gem 'rubyzip', '~> 2.3.0' # 3.0 is incompatible
 gem 'rake'
 gem 'wunderbar'
 gem 'ruby2js'
-gem 'sinatra', '~> 2.0'
+gem 'sinatra'
 gem 'nokogiri'
 gem 'execjs'
 gem 'listen'
@@ -32,6 +33,7 @@ gem 'rubyXL'
 gem 'chronic'
 
 group :test do
+  ENV['PUMA_DISABLE_SSL']='1' # https://github.com/puma/puma/issues/2839#issuecomment-1086173532
   gem 'rspec'
   gem 'puma'
   gem 'capybara'
@@ -41,3 +43,7 @@ end
 group :development do
   gem 'passenger'
 end
+
+gem 'net-smtp', require: false unless RUBY_VERSION =~ /^2/ # for Ruby 3.1
+
+gem 'ffi', '1.16.3' # HACK to get round bundle update issue

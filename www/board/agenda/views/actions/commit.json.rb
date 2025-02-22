@@ -70,7 +70,7 @@ Agenda.update(agenda_file, @message) do |agenda|
         approvals = approvals.strip.split(/(?:,\s*|\s+)/)
         if approvals.delete(initials)
           if approvals.empty?
-            match[/approved:(.*?)\n/, 1] = ""
+            match[/approved:(.*?)\n/, 1] = ''
           else
             match[/approved: (.*?)\n/, 1] = approvals.join(', ')
           end
@@ -153,7 +153,7 @@ Agenda.update(agenda_file, @message) do |agenda|
           replacement.puts ' ]'
         end
 
-        replacement.print "      Status:"
+        replacement.print '      Status:'
         replacement.print " #{action[:status]}" unless action[:status].empty?
         replacement.puts
         replacement.puts
@@ -167,7 +167,7 @@ Agenda.update(agenda_file, @message) do |agenda|
 
   # apply operations comments to the President's report
   operations = Range.new(*agenda.scan(
-    /\s*Additionally, please see Attachments (\d) through (\d)\./).first)
+    /\s*Additionally, please see Attachments (\d) through (\d+)\./).first)
   operations.each do |attachment|
     if comments.include? attachment
       office = agenda[

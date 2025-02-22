@@ -18,7 +18,7 @@ attach = nil
 
 # Determine if user is authorized
 user = ASF::Person.find(env.user)
-member_or_officer = (user.asf_member? or ASF.pmc_chairs.include? user)
+member_or_officer = (user.asf_chair_or_member?)
 real_web_server = env.password
 alternate_credentials = (real_web_server and not member_or_officer) ?
   [['--username', 'whimsysvn']] : nil
@@ -41,13 +41,13 @@ Agenda.update(@agenda, @message, auth: alternate_credentials) do |agenda|
     projectName = project.display_name
     parsed.each do |report|
       if report['title'] == projectName
-        raise "report already posted" unless @digest or report['missing']
+        raise 'report already posted' unless @digest or report['missing']
         attach = @attach = report[:attach]
         @digest ||= report['digest']
       end
     end
   elsif not ENV['RACK_ENV'] == 'test'
-    raise "not authorized to post to the board agenda" unless member_or_officer
+    raise 'not authorized to post to the board agenda' unless member_or_officer
   end
 
   # remove trailing whitespace
@@ -71,7 +71,7 @@ Agenda.update(@agenda, @message, auth: alternate_credentials) do |agenda|
     title = "    #{order}. #{@title}\n\n"
 
     # update the commit message that will be used
-    @message.sub! "7X", "7#{order}"
+    @message.sub! '7X', "7#{order}"
 
     # insert into agenda
     agenda[/\n() 8\. Discussion Items/, 1] = "#{title}#{@report}\n\n"
@@ -91,12 +91,12 @@ Agenda.update(@agenda, @message, auth: alternate_credentials) do |agenda|
     title = "    #{item}. #{@title}\n\n"
 
     # update the commit message that will be used
-    @message.sub! "8X", "8#{item}"
+    @message.sub! '8X', "8#{item}"
 
     # insert into agenda
     agenda[/\n() 9\. .*Action Items/, 1] = "#{title}#{@report}\n\n"
 
-  elsif @attach.start_with? '+'
+  elsif @attach&.start_with? '+'
     pmc_reports = parsed.select {|section| section[:attach] =~ /^[A-Z]/}
     attach = pmc_reports.last[:attach].succ
     pmc = ASF::Committee.find(@attach[1..-1])
@@ -134,7 +134,7 @@ Agenda.update(@agenda, @message, auth: alternate_credentials) do |agenda|
     if not item
       raise Exception.new("Attachment #{@attach.inspect} not found")
     elsif @digest != item['digest']
-      raise Exception.new("Merge conflict")
+      raise Exception.new('Merge conflict')
     end
 
     spacing = "\n\n"
@@ -155,7 +155,7 @@ Agenda.update(@agenda, @message, auth: alternate_credentials) do |agenda|
       spacing = "\n\n\n"
     end
 
-    spacing = "" if @report.empty?
+    spacing = '' if @report.empty?
 
     # President report has a custom footer - retain it
     if item['title'] == 'President' and agenda[pattern]

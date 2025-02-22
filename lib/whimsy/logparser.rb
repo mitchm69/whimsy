@@ -6,6 +6,7 @@ require 'whimsy/asf'
 require 'json'
 require 'stringio'
 require 'zlib'
+require 'time'
 
 # Utility methods to turn server logs into hashes of interesting data
 module LogParser
@@ -57,7 +58,7 @@ module LogParser
   TRUNCATE = 6 # Ensure consistency in keys
   TIME_OFFSET = 10_000_000.0 # Offset milliseconds slightly for array entries
   # Ignore error lines from other tools with long tracebacks
-  IGNORE_TRACEBACKS = ["rack.rb", "asf/themes", "phusion_passenger"]
+  IGNORE_TRACEBACKS = ['rack.rb', 'asf/themes', 'phusion_passenger']
 
   # Read a text or .gz file
   # @param f filename: .log or .log.gz
@@ -77,7 +78,7 @@ module LogParser
   # @param f filename of whimsy_access.log or .gz
   # @return array of reduced, scrubbed entries as hashes
   def parse_whimsy_access(f)
-    access = read_logz(f).scan(/<%JSON:httpd_access%> (\{.*\})/).flatten
+    access = read_logz(f).scan(/<%JSON:apache_access%> (\{.*\})/).flatten
     logs = JSON.parse('[' + access.join(',') + ']').reject do |i|
       (i['useragent'] =~ /Ping My Box/) || (i['uri'] =~ Regexp.union(IGNORED_URIS)) || (i['status'] == 304)
     end
@@ -152,11 +153,11 @@ module LogParser
           last_time = $1
           capture = $2
           if capture =~ /Passenger/
-            logs[DateTime.parse(last_time).iso8601(TRUNCATE)] = capture
+            logs[Time.parse(last_time).iso8601(TRUNCATE)] = capture
           end
         elsif (l =~ /(_ERROR|_WARN  (.+)whimsy)/) && l !~ ignored
           # Offset our time so it doesn't overwrite any Passenger entries
-          (logs[(DateTime.parse(last_time) + 1 / TIME_OFFSET).iso8601(TRUNCATE)] ||= []) << l
+          (logs[(Time.parse(last_time) + 1 / TIME_OFFSET).iso8601(TRUNCATE)] ||= []) << l
         end
       rescue StandardError => e
         puts e
@@ -184,13 +185,13 @@ module LogParser
   # [..date..] [proxy:error] [pid ...] [client ...] AH00898: Error during SSL Handshake with remote server returned by /board/agenda/websocket/
   # [..date..] [proxy:error] [pid ...] (20014)Internal error (specific information not available): [client ...] AH01084: pass request body failed to 127.0.0.1:34234 (localhost)
   def parse_whimsy_error(f, logs = {})
-    r = Regexp.new('\[(?<errdate>[^\]]*)\] \[[\w_]+:error\] \[.+?\] (.+: )?\[.+?\] (?<errline>.+)')
+    r = Regexp.new('\[(?<errdate>[^\]]*)\] \[[\w_]+:error\] \[.+?\] (.+: )?\[client .+?\] (?<errline>.+)')
     ignored = Regexp.union(IGNORE_TRACEBACKS)
     read_logz(f).lines.each do |l|
       r.match(l) do |m|
         unless ignored =~ m[2]
           begin
-            logs[DateTime.parse(m[1]).iso8601(6)] = m[2]
+            logs[Time.parse(m[1]).iso8601(6)] = m[2]
           rescue StandardError
             # Fallback to merely using the string representation
             logs[m[1]] = m[2]

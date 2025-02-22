@@ -7,7 +7,7 @@ class NonPMC
     members = cttee.owners
     committers = cttee.committers
     # Hack to fix unusual mail_list values e.g. press@apache.org
-    mail_list = cttee.mail_list.sub(/@.*/,'')
+    mail_list = cttee.mail_list.sub(/@apache\.org/,'')
     mail_list = 'legal' if mail_list =~ /^legal-/ && cttee.name != 'dataprivacy'
     mail_list = 'fundraising' if mail_list =~ /^fundraising-/
 
@@ -31,6 +31,15 @@ class NonPMC
       require 'whimsy/asf/mlist'
       moderators, modtime = ASF::MLIST.list_moderators(mail_list)
       subscribers, subtime = ASF::MLIST.list_subs(mail_list) # counts only, no archivers
+      if mail_list == 'press' # SPECIAL
+        %w{markpub announce}.each do |alt_list|
+          mods, _ = ASF::MLIST.list_moderators(alt_list)
+          moderators.merge! mods
+          subs, _ = ASF::MLIST.list_subs(alt_list)
+          subscribers.merge! subs
+        end
+      end
+      # TODO: do any non-PMCs have private lists?
       analysePrivateSubs = currentUser.asf_member?
       unless analysePrivateSubs # check for private moderator if not already allowed access
         user_mail = currentUser.all_mail || []
@@ -49,7 +58,7 @@ class NonPMC
       lists = ASF::MLIST.domain_lists(mail_list, false)
     end
 
-    roster = cttee.roster.dup
+    roster = ASF.dup(cttee.roster)
     # if the roster is empty, then add the chair(s)
     if roster.empty?
       cttee.chairs.each do |ch|
@@ -68,12 +77,11 @@ class NonPMC
       }
       if analysePrivateSubs
         allMail = person.all_mail.map(&:downcase)
-        roster[person.id]['notSubbed'] = (allMail & pSubs).empty?
+        roster[person.id]['notSubbed'] = true if (allMail & pSubs).empty?
         unMatchedSubs.delete_if {|k| allMail.include? k.downcase}
         unMatchedSecSubs.delete_if {|k| allMail.include? k.downcase}
       end
       roster[person.id]['ldap'] = true
-      roster[person.id]['githubUsername'] = (person.attrs['githubUsername'] || []).join(', ')
     end
 
     committers.each do |person|
@@ -81,10 +89,13 @@ class NonPMC
         name: person.public_name,
         role: 'Committer'
       }
-      roster[person.id]['githubUsername'] = (person.attrs['githubUsername'] || []).join(', ')
     end
 
-    roster.each {|_, info| info[:member] = ASF::Person.find(id).asf_member?}
+    roster.each do |k, v|
+      person = ASF::Person.find(k)
+      v[:member] = person.asf_member?
+      v['githubUsername'] = (person.attrs['githubUsername'] || []).join(', ')
+    end
 
     if cttee.chair and roster[cttee.chair.id]
       roster[cttee.chair.id]['role'] = 'Committee chair'

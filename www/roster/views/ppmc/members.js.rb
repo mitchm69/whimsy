@@ -25,7 +25,7 @@ class PPMCMembers < Vue
       end
     end
 
-    if @@ppmc.analysePrivateSubs
+    if @@ppmc.analysePrivateSubs or @@ppmc.isOwner
       _h4.crosscheck! 'Cross-check of private@ list subscriptions'
       _p {
         _ 'PPMC entries above with (*) do not appear to be subscribed to the private list.'
@@ -45,8 +45,6 @@ class PPMCMembers < Vue
           _ 'They could be PPMC (or ASF) members whose emails are not listed in their LDAP record.'
           _br
           _ 'Or they could be ex-PPMC members who are still subscribed.'
-          _br
-          _ '(Note that digest subscriptions are not currently included)'
           _br
           _br
           _ul {
@@ -97,6 +95,8 @@ class PPMCMembers < Vue
           }
         }
       end
+    else
+      _h4 'Sorry, you do not have access to show private list subscription checks'
     end
   end
 
@@ -133,15 +133,25 @@ class PPMCMember < Vue
         end
       end
 
-      if @@person.member
+      if @@person.member == true # full member
         _td { _b { _a @@person.id, href: "committer/#{@@person.id}" }
-              _a ' (*)', href: "ppmc/#{@@ppmc.id}#crosscheck" if @@person.notSubbed and @@ppmc.analysePrivateSubs
+              _a ' (*)', href: "ppmc/#{@@ppmc.id}#crosscheck" if @@person.notSubbed
             }
         _td @@person.githubUsername
         _td { _b @@person.name }
+      elsif @@person.member
+        _td { _i { _a @@person.id, href: "committer/#{@@person.id}" }
+              _a ' (*)', href: "ppmc/#{@@ppmc.id}#crosscheck" if @@person.notSubbed
+            }
+        _td @@person.githubUsername
+        _td { _i @@person.name
+              _ ' ('
+              _ @@person.member.sub(%r{( \(Non-voting\))? Member}, '').sub(%r{^Emeritus}, 'ASF Emeritus')
+              _ ')'
+            }
       else
         _td { _a @@person.id, href: "committer/#{@@person.id}"
-              _a ' (*)', href: "ppmc/#{@@ppmc.id}#crosscheck" if @@person.notSubbed and @@ppmc.analysePrivateSubs
+              _a ' (*)', href: "ppmc/#{@@ppmc.id}#crosscheck" if @@person.notSubbed
             }
         _td @@person.githubUsername
         _td @@person.name
@@ -154,7 +164,7 @@ class PPMCMember < Vue
               data_action: 'add icommit',
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Add #{@@person.name} as a committer " +
-                "for the incubator PPMC?"
+                'for the incubator PPMC?'
           end
 
           unless @@ppmc.committers.include? @@person.id

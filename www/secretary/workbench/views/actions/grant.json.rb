@@ -15,6 +15,7 @@ grant = "#@filename#{fileext}"
 
 # verify that a grant under that name doesn't already exist
 if grant =~ /^\w[-\w]*\.?\w*$/
+  ASF::GrantFiles.update_cache(env)
   if ASF::GrantFiles.exist?(grant)
     _warn "documents/grants/#{grant} already exists"
   end
@@ -79,7 +80,7 @@ task "email #@email" do
     to: "#{@name.inspect} <#{@email}>",
     cc: [
       'secretary@apache.org',
-      ("private@#{@pmc.mail_list}.apache.org" if @pmc), # copy pmc
+      (@pmc.private_mail_list if @pmc), # copy pmc
       (@podling.private_mail_list if @podling) # copy podling
     ],
     body: template('grant.erb')

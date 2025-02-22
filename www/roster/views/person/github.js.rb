@@ -7,7 +7,13 @@ class PersonGitHub < Vue
     committer = @@person.state.committer
 
     _div.row data_edit: 'github' do
-      _div.name 'GitHub username'
+      _div.name do
+        _ 'GitHub username(s)'
+        _br
+        _b 'N.B. not synched with the ASF-linked id'
+        _br
+        _a 'Link GitHub username to ASF id', href: 'https://gitbox.apache.org/boxer/'
+      end
 
       _div.value do
 
@@ -38,13 +44,14 @@ class PersonGitHub < Vue
           else
             _ul committer.githubUsername do |gh|
               _li do
-                _a gh, href: "https://github.com/" + gh +"/" # / catches trailing spaces
+                _a gh, href: 'https://github.com/' + gh +'/' # / catches trailing spaces
                 unless gh =~ /^[-0-9a-zA-Z]+$/ # should agree with the validation in github.json.rb
                   _ ' '
                   _span.bg_warning "Invalid: '#{gh}' expecting only alphanumeric and '-'"
                 end
               end
             end
+            _ '(The above are added by the user, so might not match the one linked to the ASF id)'
           end
         end
       end

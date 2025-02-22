@@ -29,7 +29,7 @@ class PMCMembers < Vue
         end
       end
     end
-    if @@committee.analysePrivateSubs
+    if @@committee.analysePrivateSubs or @@committee.isPMCMember
       _h4.crosscheck! 'Cross-check of private@ list subscriptions'
       _p {
         _ 'PMC entries above with (*) do not appear to be subscribed to the private list.'
@@ -50,8 +50,6 @@ class PMCMembers < Vue
           _ 'They could be PMC (or ASF) members whose emails are not listed in their LDAP record.'
           _br
           _ 'Or they could be ex-PMC members who are still subscribed.'
-          _br
-          _ '(Note that digest subscriptions are not currently included)'
           _br
           _br
           _ul {
@@ -114,8 +112,6 @@ class PMCMembers < Vue
           _br
           _ 'Or they could be ex-PMC members who are still subscribed.'
           _br
-          _ '(Note that digest subscriptions are not currently included)'
-          _br
           _br
           _ul {
             unknownSecSubs.each do |sub|
@@ -139,6 +135,9 @@ class PMCMembers < Vue
           }
         }
       end
+
+    else
+      _h4 'Sorry, you do not have access to show private list subscription checks'
     end
   end
 
@@ -171,6 +170,7 @@ class PMCMember < Vue
   end
 
   def render
+    style = @@person.date ? '' : 'text-decoration: line-through'
     _tr do
       if @@auth
         _td do
@@ -178,18 +178,28 @@ class PMCMember < Vue
              onClick: -> {self.toggleSelect(@@person)}
         end
       end
-      if @@person.member
-        _td { _b { _a @@person.id, href: "committer/#{@@person.id}" }
-              _a ' (*)', href: "committee/#{@@committee.id}#crosscheck" if @@person.notSubbed and @@committee.analysePrivateSubs
+      if @@person.member == true # full member
+        _td { _b { _a @@person.id, href: "committer/#{@@person.id}", style: style }
+              _a ' (*)', href: "committee/#{@@committee.id}#crosscheck", style: style if @@person.notSubbed
             }
-        _td @@person.githubUsername
-        _td { _b @@person.name }
+        _td @@person.githubUsername, style: style
+        _td { _b @@person.name, style: style }
+      elsif @@person.member
+        _td { _i { _a @@person.id, href: "committer/#{@@person.id}", style: style }
+              _a ' (*)', href: "committee/#{@@committee.id}#crosscheck", style: style if @@person.notSubbed
+            }
+        _td @@person.githubUsername, style: style
+        _td { _i @@person.name, style: style
+              _ ' ('
+              _ @@person.member.sub(%r{( \(Non-voting\))? Member}, '').sub(%r{^Emeritus}, 'ASF Emeritus'), style: style
+              _ ')'
+            }
       else
-        _td { _a @@person.id, href: "committer/#{@@person.id}"
-              _a ' (*)', href: "committee/#{@@committee.id}#crosscheck" if @@person.notSubbed and @@committee.analysePrivateSubs
+        _td { _a @@person.id, href: "committer/#{@@person.id}", style: style
+              _a ' (*)', href: "committee/#{@@committee.id}#crosscheck", style: style if @@person.notSubbed
             }
-        _td @@person.githubUsername
-        _td @@person.name
+        _td @@person.githubUsername, style: style
+        _td @@person.name, style: style
       end
 
       _td @@person.date

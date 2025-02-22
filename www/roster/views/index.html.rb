@@ -1,14 +1,14 @@
 #
 # Landing page
 #
-PAGETITLE = "ASF Roster Tool" # Wvisible:projects
+PAGETITLE = 'ASF Roster Tool' # Wvisible:projects
 
 _html do
   _link rel: 'stylesheet', href: "stylesheets/app.css?#{cssmtime}"
 
   _body? do
     if @stamps
-      _.comment! "TIMES %s TIMES" % @stamps.join(',')
+      _.comment! 'TIMES %s TIMES' % @stamps.join(',')
     end
     _whimsy_body(
       title: PAGETITLE,
@@ -48,7 +48,7 @@ _html do
           end
         end
 
-        if person.asf_member? or ASF.pmc_chairs.include? person
+        if person.asf_chair_or_member?
           _tr do
             _td do
               _a @committers.length, href: 'committer2/'
@@ -60,7 +60,7 @@ _html do
 
             _td do
               _ 'Search for committers by name, user id, or email address.'
-              _ ' Also includes pending ICLAs'
+              _ ' Also includes pending ICLAs (i.e. account not yet created)'
             end
           end
         end
@@ -166,17 +166,17 @@ _html do
 
       end
 
-      if person.asf_member? or ASF.pmc_chairs.include? person
+      if person.asf_chair_or_member?
         _hr
         _p do
           _a 'Search pending ICLAs', href: 'icla/'
-          _span.glyphicon.glyphicon_lock :aria_hidden, class: "text-primary", aria_label: "ASF Members and Officers",
-                                                                                   title: "ASF Members and Officers"
+          _span.glyphicon.glyphicon_lock :aria_hidden, class: 'text-primary', aria_label: 'ASF Members and Officers',
+                                                                                   title: 'ASF Members and Officers'
         end
         _p do
           _a 'Organization Chart ', href: 'orgchart/'
-          _span.glyphicon.glyphicon_lock :aria_hidden, class: "text-primary", aria_label: "ASF Members and Officers",
-                                                                                   title: "ASF Members and Officers"
+          _span.glyphicon.glyphicon_lock :aria_hidden, class: 'text-primary', aria_label: 'ASF Members and Officers',
+                                                                                   title: 'ASF Members and Officers'
         end
       end
     end

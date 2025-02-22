@@ -8,16 +8,19 @@ require 'wunderbar'
 require 'wunderbar/bootstrap'
 
 MEETING = {
-  'meeting.cgi' => "Member's Meeting FAQ, Timeline, How-Tos",
-  'proxy.cgi' => "Assign a proxy for the (current) Member's meeting",
-  'watch.cgi' => "Potential Member Watch List - tracking candidates for future nominations",
-  'memberless-pmcs.cgi' => "Crosscheck PMCs with few/no ASF Members, for future nominations",
-  'nominations.cgi' => "Member's nominations cross-check - ensuring nominations get on the ballot, etc.",
-  'board-nominations.cgi' => "Board nominations cross-check - ensuring nominations get on the ballot, etc.",
-  'attendance-xcheck.cgi' => "Member's Meeting Attendance cross-check - who attended when",
-  'non-participants.cgi' => "Active Members not participating in recent meetings (to send a poll to)",
-  'inactive.cgi' => "Poll of Inactive Members - tool to query non-participating members why",
-  'whatif.cgi' => "Board STV Results 'what-if' tool - review past board election votes"
+  'meeting.cgi' => 'Member Meeting FAQ, Timeline, How-Tos',
+  'proxy.cgi' => 'Assign a proxy for the (current) Member meeting',
+  'watch.cgi' => 'Potential Member Watch List - tracking candidates for future nominations',
+  'memberless-pmcs.cgi' => 'Crosscheck PMCs with few/no ASF Members, for future nominations',
+  'nominate_member.cgi' => 'Nominate someone for ASF Member',
+  'check_membernoms.cgi' => 'Cross-check existing New Member nominations',
+  'nominate_board.cgi' => 'Nominate someone for the Board',
+  'check_boardnoms.cgi' => 'Cross-check existing Board nominations',
+  'check_invitations.cgi' => 'Cross-check new Member invitations / applications',
+  'attendance-xcheck.cgi' => 'Member Meeting Attendance cross-check - who attended when',
+  'non-participants.cgi' => 'Active Members not participating in recent meetings (to send a poll to)',
+  'inactive.cgi' => 'Poll of Inactive Members - tool to query non-participating members why',
+  'whatif.cgi' => 'Board STV Results what-if tool - review past board election results'
 }
 
 LISTS = {
@@ -25,17 +28,19 @@ LISTS = {
   'list-traffic.cgi' => "Statistics about members@ mailing list traffic",
   '/officers/list-traffic.cgi' => "Statistics about board@ mailing list traffic",
   'subscriptions.cgi' => "Apache members@ List Subscription Crosscheck",
-  'security-subs.cgi' => "Security Mailing Lists Subscription Check"
-
+  'security-subs.cgi' => "Security Mailing Lists Subscription Check",
+  'mailing_lists.cgi' => "Apache Mailing List Info",
+  'moderator_checks.cgi' => "Apache List Moderator checks"
 }
+
 MISC = {
   'mentors.cgi' => "New Member mentoring program overview",
   'board-attend.cgi' => "Director attendance statistics at board meetings",
-  'board-nominations.cgi' => "Board Member nominations cross-check - ensuring nominations get on the ballot, etc.",
   'ldap-namecheck.cgi' => "Crosscheck LDAP Names With Public Name from ICLAs",
   'namediff.cgi' => "Crosscheck Members Names With ICLA records",
   'mirror_check.cgi' => "ASF Distribution Mirror Check - is a mirror configured correctly",
-  'download_check.cgi' => "Verify an Apache project download page is configured correctly"
+  'download_check.cgi' => "Verify an Apache project download page is configured correctly",
+  'logs.cgi' => "View server logs"
 }
 
 _html do

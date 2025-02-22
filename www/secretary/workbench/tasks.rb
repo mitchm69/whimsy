@@ -58,26 +58,21 @@ class Wunderbar::JsonBuilder
     super
   end
 
-  def svn *args
-    args << svnauth if env.password and %(checkout update commit).include?(args.first)
-    _.system! 'svn', *args
-  end
-
-  # alternate version using library method
+  # invoke svn using library method
   # assumes correct ordering of parameters
-  def svn!(command,path,options={})
+  def svn!(command, path, options={})
     options[:env] = env if env.password and %(checkout update commit).include?(command)
-    ASF::SVN.svn_!(command,path,_,options)
+    ASF::SVN.svn_!(command, path, _, options)
   end
 
-  def svnauth
-    [
-      '--non-interactive',
-      '--no-auth-cache',
-      '--username', env.user,
-      '--password', env.password
-    ]
-  end
+  def _extra_props(extras, emessage, outpath)
+    Message::PROPNAMES_DEFAULT.each do |propname|
+      propval = emessage.propval(propname)
+      if propval
+        extras << ['propset', propname, propval, outpath]
+      end
+    end
+end
 
   # Commit new file(s) and update associated index
   # e.g. add ccla.pdf, ccla.pdf.asc to documents/cclas/xyz/ and update officers/cclas.txt
@@ -101,7 +96,6 @@ class Wunderbar::JsonBuilder
       extras = []
       # write the attachments as file(s)
       dest = emessage.write_att(tmpdir, docname, docsig)
-      Wunderbar.warn dest.inspect
 
       if dest.size > 1 # write to a container directory
         unless outfilename =~ /\A[a-zA-Z][-.\w]+\z/ # previously done by write_svn
@@ -112,9 +106,9 @@ class Wunderbar::JsonBuilder
         dest.each do |name, file, content_type|
           if docdir == 'iclas' && outfileext # special processing for output name
             if name == docname
-              name = "icla%s" % outfileext
+              name = 'icla%s' % outfileext
             elsif name == docsig
-              name = "icla%s.asc" % outfileext
+              name = 'icla%s.asc' % outfileext
             else
               Wunderbar.warn "Cannot recognise #{name} as #{docname} or #{docsig}"
             end
@@ -123,6 +117,9 @@ class Wunderbar::JsonBuilder
           # N.B. file cannot exist here, because the directory was created as part of the same commit
           extras << ['put', file, outpath]
           extras << ['propset', 'svn:mime-type', content_type, outpath]
+          if index_name == 'iclas.txt' # Don't apply this to other types
+            _extra_props(extras, emessage, outpath)
+          end
         end
       else
         _name, file, content_type = dest.flatten
@@ -133,6 +130,9 @@ class Wunderbar::JsonBuilder
         else
           extras << ['put', file, outpath]
           extras << ['propset', 'svn:mime-type', content_type, outpath]
+          if index_name == 'iclas.txt' # Don't apply this to other types
+            _extra_props(extras, emessage, outpath)
+          end
         end
       end
 
@@ -146,7 +146,7 @@ class Wunderbar::JsonBuilder
   end
 
   def template(name)
-    path = File.expand_path(File.join("..", "templates", name), __FILE__)
+    path = File.expand_path(File.join('..', 'templates', name), __FILE__)
     ERB.new(File.read(path)).result(binding)
   end
 end

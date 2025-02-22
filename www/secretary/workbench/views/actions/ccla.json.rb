@@ -15,6 +15,7 @@ ccla = "#@filename#{fileext}"
 
 # verify that a CCLA under that name doesn't already exist
 if ccla =~ /\A\w[-\w]*\.?\w*\z/
+  ASF::CCLAFiles.update_cache(env)
   if ASF::CCLAFiles.exist?(ccla)
     _warn "documents/cclas/#{ccla} already exists"
   end
@@ -39,7 +40,7 @@ _personalize_email(env.user)
 task "svn commit documents/cclas/#@filename#{fileext} and update cclas.txt" do
 
   # construct line to be inserted in cclas.txt
-  @cclalines = "notinavail:" + @company.strip
+  @cclalines = 'notinavail:' + @company.strip
   unless @contact.empty?
     @cclalines += " - #{@contact.strip}"
   end
@@ -85,7 +86,7 @@ task "email #@email" do
     to: "#{@contact.inspect} <#{@email}>",
     cc: [
       'secretary@apache.org',
-      ("private@#{@pmc.mail_list}.apache.org" if @pmc), # copy pmc
+      (@pmc.private_mail_list if @pmc), # copy pmc
       (@podling.private_mail_list if @podling) # copy podling
     ],
     body: template('ccla.erb')

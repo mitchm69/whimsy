@@ -21,12 +21,21 @@ $LOAD_PATH.unshift '/srv/whimsy/lib'
 require 'whimsy/asf'
 require 'strscan'
 
-members = ASF::Member.list.keys
+status = ASF::Member.status
+emeritus = ASF::Member.emeritus
+current = ASF::Member.current
 
 MEMBERS = 'apache/www-site/main/content/foundation/members.md'
 
-code, contents = ASF::Git.github(MEMBERS)
-raise "Could not read #{MEMBERS}, error: #{code}" unless code == '200'
+file = ARGV.shift # Override for local testing
+if file
+  puts "Reading #{file}"
+  contents = File.read(file)
+else
+  puts 'Fetching members.md'
+  code, contents = ASF::Git.github(MEMBERS)
+  raise "Could not read #{MEMBERS}, error: #{code}" unless code == '200'
+end
 
 # # Members of The Apache Software Foundation #
 #
@@ -34,14 +43,48 @@ raise "Could not read #{MEMBERS}, error: #{code}" unless code == '200'
 #
 # | Id | Name | Projects |
 # |^---|------|----------|
-# | aadamchik | Andrei Adamchik |
+# | id | Public Name |
+
+puts 'Checking member list'
+puts '===================='
 
 s = StringScanner.new(contents)
 s.skip_until(/\| Id \| Name \| Projects \|\n/)
 s.skip_until(/\n/)
+prev = nil # for context on error
+loop do
+  s.scan(/\| (\S+) \|.*?$/)
+  id = s[1]
+  unless current.include? id
+    puts "#{id}: #{status[id] || 'unknown status'}"
+    puts "Previous id: #{prev}" unless id
+  end
+  prev = id
+  s.skip_until(/\n/)
+  break if s.match? %r{^\s*$|^##} # blank line or next section
+end
+
+
+# ## Emeritus Members of The Apache Software Foundation
+#
+# | Id | Name |
+# |----|------|
+# | id or ? | Public Name |
+
+puts ''
+
+puts 'Checking Emeritus list'
+puts '======================'
+
+s.skip_until(/\| Id \| Name \|\n/)
+s.skip_until(/\n/)
 loop do
   s.scan(/\| (\S+) \|.*?$/)
   id = s[1] or break
-  puts id unless members.include? id
+  unless id == '?'
+    unless emeritus.include?(id)
+      puts "#{id} #{status[id] || current.include?(id) ? 'Current member' : 'unknown id'}"
+    end
+  end
   s.skip_until(/\n/)
 end

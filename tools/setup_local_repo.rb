@@ -11,11 +11,11 @@ require 'whimsy/asf'
 
 ASF_REPO='https://svn.apache.org/repos/' # where to fetch files
 
-LOCAL_FILE='/var/tools/svnrep' # Change this as required
+LOCAL_FILE=ARGV.shift || '/var/tools/svnrep' # Change this as required; must exist
 
 LOCAL_URL='file://' + LOCAL_FILE
 
-svnrepos = ASF::SVN.repo_entries(true)
+svnrepos = ASF::SVN.repo_entries(true).reject{|k,v| v['url'].start_with? 'http'}
 
 # Find the top-level directories and create repositories
 svnrepos.map{|k,v| v['url'].split('/')[0]}.uniq.sort.each do |tlr|
@@ -23,7 +23,7 @@ svnrepos.map{|k,v| v['url'].split('/')[0]}.uniq.sort.each do |tlr|
   unless File.exist? File.join(repodir, 'format')
     cmd = ['svnadmin','create',repodir]
     puts cmd.join(' ')
-    system *cmd
+    system(*cmd)
   end
 end
 
@@ -33,17 +33,17 @@ svnrepos.each do |name, entry|
   svndir = File.join(LOCAL_URL, url)
 
   # if the relative URL does not exist, create the directory
-  revision, err = ASF::SVN.getRevision(svndir)
+  revision, _err = ASF::SVN.getRevision(svndir)
   unless revision
     puts "Creating #{svndir}"
-    system *%w(svn mkdir --parents --message Initial --), svndir
+    system(*%w(svn mkdir --parents --message Initial --), svndir)
   end
 
   # for each file, if it does not exist, copy the file from the ASF repo
   # TODO it might be better to copy from samples
   (entry['files'] || []).each do |file|
     filepath = File.join(svndir,file)
-    revision, err = ASF::SVN.getRevision(filepath)
+    revision, _err = ASF::SVN.getRevision(filepath)
     unless revision
       puts "Creating #{filepath}"
       Dir.mktmpdir do |tmp|
@@ -54,7 +54,7 @@ svnrepos.each do |name, entry|
         cmd = %w(svnmucc --message "Initial_create" -- put)
         cmd << out
         cmd << filepath
-        system *cmd
+        system(*cmd)
       end
     end
   end
@@ -64,4 +64,6 @@ svnrepos.each do |name, entry|
   # Meetings/yyyymmdd/memapp-received.txt where yyyymmdd is within the time limit (32 days?)
   #  acreq/new-account-reqs.txt
   # foundation_board/board_agenda_2020_08_19.txt (e.g.)
+  # foundation_board/current.txt
+  # foundation_board/templates
 end

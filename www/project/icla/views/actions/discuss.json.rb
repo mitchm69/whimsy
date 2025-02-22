@@ -6,7 +6,7 @@ require 'mail'
 require 'whimsy/lockfile'
 
 # creates the discussion phase JSON file
-# sends an email to the originator with the link 
+# sends an email to the originator with the link
 
 # Called from invite.js.rb POST
 # expects the following variables to be set:
@@ -45,7 +45,7 @@ if ASF::Person.find_by_email(@iclaemail)
 end
 
 begin
-  Socket.getaddrinfo(@iclaemail[/@(.*)/, 1].untaint, 'smtp')
+  Socket.getaddrinfo(@iclaemail[/@(.*)/, 1], 'smtp')
 
 rescue
   _error 'Invalid domain name in email address'
@@ -55,7 +55,7 @@ end
 
 # create the discussion object
 timestamp = Time.now.utc.to_s
-date = timestamp[0..9] # keep only the date 
+date = timestamp[0..9] # keep only the date
 contributor = {:name => @iclaname, :email => @iclaemail}
 comment = @proposalText + "\n" + @discussComment
 comments = [{:member => @proposer, :timestamp => timestamp, :comment => comment}]
@@ -90,7 +90,7 @@ end
 
 # add user and pmc emails to the response
 _userEmail "#{user.public_name} <#{user.mail.first}>" if user
-_pmcEmail "private@#{pmc.mail_list}.apache.org" if pmc
+_pmcEmail pmc.private_mail_list if pmc
 
 path = Pathname.new(env['REQUEST_URI']) + "../../?token=#{token}"
 scheme = env['rack.url_scheme'] || 'https'

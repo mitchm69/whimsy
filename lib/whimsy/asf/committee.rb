@@ -11,7 +11,7 @@ module ASF
   #
   # Representation for a committee (either a PMC, a board committee, or
   # a President's committee).  This data is parsed from
-  # <tt>committee-info.txt|.yaml</tt>, and is augmened by data from LDAP,
+  # <tt>committee-info.txt|.yaml</tt>, and is augmented by data from LDAP,
   # and ASF::Mail.
   #
   # Note that the simple attributes which are sourced from
@@ -36,7 +36,7 @@ module ASF
 
     # when this committee is next expected to report.  May be a string
     # containing values such as "Next month: missing in May", "Next month: new,
-    # montly through July".  Data is obtained from <tt>committee-info.txt</tt>.
+    # monthly through July".  Data is obtained from <tt>committee-info.txt</tt>.
     attr_writer :report
 
     # list of members for this committee.  Returned as a list of hash
@@ -61,8 +61,12 @@ module ASF
       super
     end
 
+    # Original field sizes for PMC section
+    NAMELEN = 26 # length of name field
+    NAMEADDRLEN = 59 # length of name + email address fields (including separator)
+
     # mapping of committee names to canonical names (generally from ldap)
-    # See also www/roster/committee.cgi
+    # See also www/roster/committee.rb
     @@aliases = Hash.new { |_hash, name| name.downcase}
     @@aliases.merge! \
       'brand management'               => 'brand',
@@ -79,6 +83,7 @@ module ASF
       'java community process'         => 'jcp',
       'legal affairs'                  => 'legal',
       'logging services'               => 'logging',
+      'logo development'               => 'logodev',
       'lucene.net'                     => 'lucenenet',
       'open climate workbench'         => 'climate',
       'ocw'                            => 'climate', # is OCW used?
@@ -101,6 +106,56 @@ module ASF
       @@namemap.call(name.downcase)
     end
 
+    # mailing list for this committee.  Generally returns the first name in
+    # the dns (e.g. whimsical).  If so, it can be prefixed by a number of
+    # list names (e.g. dev, private) and <tt>.apache.org</tt> is to be
+    # appended.  In some cases, the name contains an <tt>@</tt> sign and
+    # is the full name for the mail list.
+    # TODO: this is awkward to use as some non-PMCs have their own domain and some don't
+    # Should probably be replaced by mail_private and mail_dev
+    def mail_list
+      case name.downcase
+      when 'comdev'
+        'community'
+      when 'httpcomponents'
+        'hc'
+      when 'whimsy'
+        'whimsical'
+
+      when 'brand'
+        'trademarks@apache.org'
+      when 'infrastructure', 'infra'
+        'private@infra.apache.org'
+      when 'dataprivacy'
+        'privacy@apache.org'
+      when 'legalaffairs' # Not sure what uses this
+        'legal-internal@apache.org'
+      when 'legal' # This seems to be used by the board agenda
+        'legal-private@apache.org'
+      when 'fundraising'
+        'fundraising-private@apache.org'
+      when 'marketingandpublicity'
+        'markpub@apache.org'
+      when 'w3crelations'
+        'w3c@apache.org'
+      when 'concom'
+        'planners@apachecon.com'
+      when 'publicaffairs'
+        'public-affairs-private@apache.org'
+      when 'logodev'
+        'logo-dev@apache.org' # their only list as at 2024-08-25
+      else
+        name.downcase
+      end
+    end
+
+    # Return the committee private list
+    def private_mail_list
+      ml = mail_list
+      return mail_list if mail_list.include? '@'
+      "private@#{mail_list}.apache.org"
+    end
+
     # load committee info from <tt>committee-info.txt</tt>.  Will not reparse
     # if the file has already been parsed and the underlying file has not
     # changed.
@@ -114,12 +169,12 @@ module ASF
           @committee_mtime = @@svn_change = Time.now
         end
 
-        parse_committee_info contents
+        @nonpmcs, @officers, @committee_info = parse_committee_info_nocache(contents)
       else
         board = ASF::SVN.find('board')
-        return unless board
+        raise ArgumentError.new("Could not find 'board' checkout") unless board
         file = File.join(board, 'committee-info.txt')
-        return unless File.exist? file
+        raise ArgumentError.new("Could not find #{file}") unless File.exist? file
 
         if @committee_mtime and File.mtime(file) <= @committee_mtime
           return @committee_info if @committee_info
@@ -128,8 +183,10 @@ module ASF
         @committee_mtime = File.mtime(file)
         @@svn_change = Time.parse(ASF::SVN.getInfoItem(file, 'last-changed-date')).gmtime
 
-        parse_committee_info File.read(file)
+        Wunderbar.debug 'Parsing CI file'
+        @nonpmcs, @officers, @committee_info = parse_committee_info_nocache(File.read(file))
       end
+      @committee_info
     end
 
     # update next month section.  Remove entries that have reported or
@@ -142,7 +199,7 @@ module ASF
       block = next_month[/(.*#.*\n)+/] || ''
 
       # remove expired entries
-      month = date.strftime("%B")
+      month = date.strftime('%B')
       block.gsub!(/.* # new, monthly through #{month}\n/, '')
 
       # update/remove existing 'missing' entries
@@ -224,7 +281,8 @@ module ASF
 
       # sort and concatenate committees
       committees = committees.sort_by { |name, _chair| name.downcase }.
-        map { |name, chair| "    #{name.ljust(23)} #{chair}" }.
+        # ensure 2 spaces before chair email even if name is long
+        map { |name, chair| "    #{name.ljust(22)}  #{chair}" }.
         join("\n")
 
       # replace committee info in the section, and then replace the
@@ -252,25 +310,47 @@ module ASF
 
         # split block into lines
         lines = block.strip.split("\n")
-
+        header = lines.shift
+        # get the first line and use that to calculate the default offsets to use
+        # This is done to avoid changing the spacing needlessly
+        sample = lines.first
+        namelen = NAMELEN # original
+        nameaddrlen = NAMEADDRLEN # original
+        # N.B. 4 spaces are assumed at the start
+        if sample =~ %r{^    (\S.+) (<\S+?>\s+)\[}
+          namelen = $1.size
+          nameaddrlen = namelen + $2.size
+        end
         # add or remove people
-        people.each do |person|
-          id = person.id
-          if action == 'add'
-            unless lines.any? {|line| line.include? "<#{id}@apache.org>"}
-              name = "#{person.public_name.ljust(26)} <#{id}@apache.org>"
-              time = Time.new.gmtime.strftime('%Y-%m-%d')
-              lines << "    #{name.ljust(59)} [#{time}]"
+        # There are generally more people already in a PMC than are added or removed,
+        # so try to scan the lines once
+        # Get list of emails affected
+        yyyymmdd = Time.new.gmtime.strftime('[%Y-%m-%d]')
+        # gather list of potential new entries (some may be removed below)
+        newentries = people.map do |person|
+          [person.public_name, "<#{person.id}@apache.org>", yyyymmdd]
+        end.to_a
+        if action == 'add'
+          # parse the lines so we can use format_pmc to recreate the entry, adjusting lengths if need be
+          parsed = lines.map do |line|
+            m = line.match(%r{^    (\S.+?) (<[^>]+>)\s+(\[\d.+)})
+            if m
+              newentries.reject! {|entry| m[2] == entry[1]}
+              [m[1].strip, m[2], m[3]]
+            else
+              raise ArgumentError.new("Unexpected entry: #{line}")
             end
-          elsif action == 'remove'
-            lines.reject! {|line| line.include? "<#{id}@apache.org>"}
-          else
-            raise ArgumentError.new("Expected action=[add|remove], found '#{action}'")
           end
+          parsed += newentries
+          lines = format_pmc(parsed, namelen, nameaddrlen)
+        elsif action == 'remove'
+          lines.reject! {|line| newentries.any? {|entry| line.include? entry[1]}}
+        else
+          raise ArgumentError.new("Expected action=[add|remove], found '#{action}'")
         end
 
         # replace committee block with new information
-        contents.sub! block, ([lines.shift] + lines.sort).join("\n") + "\n\n"
+        contents.sub! block, ([header] + lines.sort).join("\n") + "\n\n"
         found = true
         break
       end
@@ -278,9 +358,9 @@ module ASF
       contents
     end
 
-    # record termination date in committee-info.yml
+    # record termination date in committee-info.yaml
     # Params:
-    # - input: the contents of committee-info.yml
+    # - input: the contents of committee-info.yaml
     # - pmc: the pmc name
     # - yyyymm: YYYY-MM retirement date
     #  Returns: the updated contents
@@ -345,7 +425,7 @@ module ASF
         blocks[index + 2].split("\n"),
       ]
 
-      unless slots.any? {|slot| slot.include? "    " + pmc}
+      unless slots.any? {|slot| slot.include? '    ' + pmc}
         # ensure that spacing is uniform
         slots.each {|slot| slot.unshift '' unless slot[0] == ''}
 
@@ -359,13 +439,13 @@ module ASF
         headers = slots[slot].shift(3)
 
         # insert pmc into the reporting schedule
-        slots[slot] << "    " + pmc
+        slots[slot] << '    ' + pmc
 
         # sort entries, case insensitive
         slots[slot].sort_by!(&:downcase)
 
         # restore headers
-        slots[slot].unshift *headers
+        slots[slot].unshift(*headers) # () are required here to prevent warning
 
         # re-insert reporting schedules
         blocks[index + 0] = slots[0].join("\n")
@@ -390,10 +470,10 @@ module ASF
       sections.delete_if {|section| section.downcase.start_with? pmc.downcase}
 
       # build new section
-      people = people.map do |id, person|
-        name = "#{person[:name].ljust(26)} <#{id}@apache.org>"
-        "    #{(name).ljust(59)} [#{date.strftime('%Y-%m-%d')}]"
+      entries = people.map do |id, person|
+        [person[:name], "<#{id}@apache.org>", "[#{date.strftime('%Y-%m-%d')}]"]
       end
+      people = format_pmc(entries)
 
       section = ["#{pmc}  (est. #{date.strftime('%m/%Y')})"] + people.sort
 
@@ -407,15 +487,37 @@ module ASF
       head + '* ' + sections.join('* ') + foot
     end
 
+    # format a PMC entry
+    # people: array of entries in the form [name, email, date+comment]
+    # namelen: default size to allow for name field
+    # nameaddrlen: default size to allow for name + email field
+    # fields will be separated by at least one space on output
+    # The defaults are taken from the originals to avoid needless change
+    def self.format_pmc(people, namelen=NAMELEN, nameaddrlen=NAMEADDRLEN)
+      maillen = 0
+      people.each do |name, email, _datefield|
+        namelen = [namelen, name.size].max
+        maillen = [maillen, email.size].max
+      end
+      # +1 for space between fields
+      nameaddrlen = [nameaddrlen, namelen + maillen + 1].max
+      people.map do |name, email, datefield|
+        nameaddr = "#{name.ljust(namelen)} #{email}"
+        "    #{(nameaddr).ljust(nameaddrlen)} #{datefield}"
+      end
+    end
+
     # extract chairs, list of nonpmcs, roster, start date, and reporting
-    # information from <tt>committee-info.txt</tt>.  Note: this method is
-    # intended to be internal, use ASF::Committee.load_committee_info as it
-    # will cache this data.
-    def self.parse_committee_info(contents)
+    # information from <tt>committee-info.txt</tt>.
+    # @return nonpmcs, officers, committees (including nonpmcs)
+    # This can safely be called with any input as it is idempotent
+    # For general use, use ASF::Committee.load_committee_info
+    # which caches the data
+    def self.parse_committee_info_nocache(contents)
       # List uses full (display) names as keys, but the entries use the canonical names
       # - the local version of find() converts the name
       # - and stores the original as the display name if it has some upper case
-      list = Hash.new {|hash, name| hash[name] = find(name)}
+      list = Hash.new {|hash, name| hash[name] = find(name, true)}
 
       # Split the file on lines starting "* ", i.e. the start of each group in section 3
       info = contents.split(/^\* /)
@@ -434,7 +536,7 @@ module ASF
         # Now weed out the malformed lines
         m = line.match(/^[ \t]+(\w.*?)[ \t][ \t]+(.*)[ \t]+<(.*?)@apache\.org>/)
         if m
-          committee, name, id = m.captures
+          committee, name, id = m.captures # committee may not be canonical here
           unless list[committee].chairs.any? {|chair| chair[:id] == id}
             list[committee].chairs << {name: name, id: id}
           end
@@ -443,15 +545,20 @@ module ASF
           Wunderbar.warn "Missing separator before chair name in: '#{line}'"
         end
       end
+      # Any duplicates?
+      dupes = list.group_by{|x| x.first.downcase}.select{|k,v|v.size!=1}
+      if dupes.size > 0
+        Wunderbar.warn "Duplicate chairs: #{dupes}}"
+      end
       # Extract the non-PMC committees (e-mail address may be absent)
       # first drop leading text (and Officers) so we only match non-PMCs
-      @nonpmcs = head.sub(/.*?also has /m, '').sub(/ Officers:.*/m, '').
+      nonpmcs = head.sub(/.*?also has /m, '').sub(/ Officers:.*/m, '').
         scan(/^[ \t]+(\w.*?)(?:[ \t][ \t]|[ \t]?$)/).flatten.uniq.
         map {|name| list[name]}
 
       # Extract officers
       # first drop leading text so we only match officers at end of section
-      @officers = head.sub(/.*?also has .*? Officers/m, '').
+      officers = head.sub(/.*?also has .*? Officers/m, '').
         scan(/^[ \t]+(\w.*?)(?:[ \t][ \t]|[ \t]?$)/).flatten.uniq.
         map {|name| list[name]}
 
@@ -512,14 +619,14 @@ module ASF
           end
         end
       end
-      @committee_info = (list.values - @officers).uniq
+      committee_info = (list.values - officers).uniq
       # Check if there are duplicates.
-      @committee_info.each do |c|
+      committee_info.each do |c|
         if c.chairs.length != 1 && c.name != 'fundraising' # hack to avoid reporting non-PMC entry
           Wunderbar.warn "Unexpected chair count for #{c.display_name}: #{c.chairs.inspect rescue ''}"
         end
       end
-      @committee_info
+      return nonpmcs, officers, committee_info
     end
 
     # return a list of PMC committees.  Data is obtained from
@@ -554,9 +661,12 @@ module ASF
     # Finds a committee based on the name of the Committee.  Is aware of
     # a number of aliases for a given committee.  Will set display name
     # if the name being searched on contains an uppercase character.
-    def self.find(name)
+    # If clear is true, then remove any cached entry
+    def self.find(name, clear=false)
       raise ArgumentError.new('name: must not be nil') unless name
-      result = super(@@namemap.call(name.downcase))
+      namelc = @@namemap.call(name.downcase)
+      collection[namelc] = nil if clear
+      result = super(namelc)
       result.display_name = name if name =~ /[A-Z]/
       result
     end
@@ -593,7 +703,7 @@ module ASF
 
     # when this committee is next expected to report.  May be a string
     # containing values such as "Next month: missing in May", "Next month: new,
-    # montly through July".  Or may be a list of months, separated by commas.
+    # monthly through July".  Or may be a list of months, separated by commas.
     # Data is obtained from <tt>committee-info.txt</tt>.
     def report
       @report || @schedule
@@ -665,18 +775,29 @@ module ASF
 
     # append the description for a new tlp committee.
     # this is intended to be called from todos.json.rb in the block for ASF::SVN.update
-    def self.appendtlpmetadata(input, committee, description)
+    def self.appendtlpmetadata(input, committee, description, date_established)
       YamlFile.replace_section(input, :tlps) do |section, yaml|
         output = section # default no change
-        if yaml[:cttees][committee]
+        if yaml[:cttees][committee] && !yaml[:cttees][committee][:retired]
           Wunderbar.warn "Entry for '#{committee}' already exists under :cttees"
-        elsif yaml[:tlps][committee]
+        elsif yaml[:tlps][committee] && !yaml[:tlps][committee][:retired]
           Wunderbar.warn "Entry for '#{committee}' already exists under :tlps"
         else
-          section[committee] = {
-            site: "http://#{committee}.apache.org",
-            description: description,
-          }
+          if section[committee] # already exists; must be retired
+            diary = section[committee][:diary]
+            if !diary
+                diary = section[committee][:diary] = []
+                diary << {established: section[committee][:established]}
+            end
+            diary << {retired: section[committee].delete(:retired)}
+            diary << {resumed: date_established.strftime('%Y-%m')}
+          else
+            section[committee] = {
+                site: "http://#{committee}.apache.org",
+                description: description,
+                established: date_established.strftime('%Y-%m'),
+            }
+          end
           output = section.sort.to_h
         end
         output
@@ -684,4 +805,10 @@ module ASF
     end
 
   end
+
+  # ensure the CI data is pre-loaded
+  # If this is not done, the first committee instance may be incomplete
+  Wunderbar.debug 'Initialising CI file'
+  ASF::Committee.load_committee_info
+
 end

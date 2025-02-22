@@ -3,13 +3,13 @@
   "version": "0.1.0",
 
   "repository": {
-    "type": "svn", 
+    "type": "svn",
     "url": "https://svn.apache.org/repos/infra/infrastructure/trunk/projects/whimsy/www/test/roster"
   },
 
   "devDependencies": {
-    "jsdom": "^11.1.0",
+    "jsdom": "^22.0.0",
     "jquery": "^3.2.1",
-    "react": "^0.13.3"
+    "react": "^0.14.0"
   }
 }

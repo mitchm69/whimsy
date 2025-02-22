@@ -52,10 +52,13 @@ module SiteStandards
       CHECK_POLICY => 'https://www.apache.org/foundation/marks/pmcs#navigation',
       CHECK_DOC => 'All projects must feature some prominent link back to the main ASF homepage at http://www.apache.org/',
     },
+    # <script src="https://www.apachecon.com/event-images/snippet.js">
+    # https://events.apache.org/x/current-event[.html]
+    # https://[www.]apache.org/events/current-event[.html]
     'events' => { # Custom: a_href.include? 'apache.org/events/' then custom check for img
       CHECK_TEXT => nil,
-      CHECK_CAPTURE => %r{apache\.org/events},
-      CHECK_VALIDATE => %r{^https?://.*apache.org/events/current-event},
+      CHECK_CAPTURE => %r{(events|x)/current-event|event-images},
+      CHECK_VALIDATE => %r{^https?://((www\.)?apache\.org/events/current-event|events\.apache.org/x/current-event|www\.apachecon\.com/event-images/snippet\.js)},
       CHECK_TYPE => true,
       CHECK_POLICY => 'https://www.apache.org/events/README.txt',
       CHECK_DOC => 'Projects SHOULD include a link to any current ApacheCon event, as provided by VP, Conferences.',
@@ -66,15 +69,15 @@ module SiteStandards
       CHECK_VALIDATE => %r{^https?://.*apache.org/licenses/?$},
       CHECK_TYPE => true,
       CHECK_POLICY => 'https://www.apache.org/foundation/marks/pmcs#navigation',
-      CHECK_DOC => '"License" should link to: http[s]://www.apache.org/licenses[/]',
+      CHECK_DOC => 'There should be a "License" (*not* "Licenses") navigation link which points to: http[s]://www.apache.org/licenses[/]. (Do not link to sub-pages)',
     },
     'thanks' => { # link_check a_text =~ /\A(sponsors|thanks!?|thanks to our sponsors)\z/
         CHECK_TEXT => /\A(sponsors|thanks!?|thanks to our sponsors)\z/,
         CHECK_CAPTURE => /\A(sponsors|thanks!?|thanks to our sponsors)\z/,
-        CHECK_VALIDATE => %r{^https?://.*apache.org/foundation/thanks},
+        CHECK_VALIDATE => %r{^https?://.*apache.org/foundation/(thanks|sponsors)},
         CHECK_TYPE => true,
         CHECK_POLICY => 'https://www.apache.org/foundation/marks/pmcs#navigation',
-        CHECK_DOC => '"Sponsors", "Thanks" or "Thanks to our Sponsors" should link to: http://www.apache.org/foundation/thanks.html',
+        CHECK_DOC => '"Sponsors", "Thanks" or "Thanks to our Sponsors" should link to: http://www.apache.org/foundation/thanks.html or sponsors.html',
     },
     'security' => { # link_check a_text == 'security'
       CHECK_TEXT => /security/,
@@ -110,6 +113,27 @@ module SiteStandards
       CHECK_DOC => 'All website content SHOULD include a copyright notice for the ASF.',
     },
 
+    'privacy' => { # link_check; allow original link (now redirected)
+      CHECK_TEXT => %r{Privacy Policy}i,
+      CHECK_CAPTURE => %r{(Privacy)}i,
+      CHECK_VALIDATE => %r{\Ahttps://privacy\.apache\.org/policies/privacy-policy-public\.html\z
+                          |
+                          \Ahttps?://(?:www\.)?apache\.org/foundation/policies/privacy\.html\z
+                          }ix,
+      CHECK_TYPE => true,
+      CHECK_POLICY => 'https://www.apache.org/foundation/marks/pmcs.html#navigation',
+      CHECK_DOC => 'All websites must link to the Privacy Policy.',
+    },
+
+    'resources' => { # Custom: resources not outside ASF
+      CHECK_TEXT => %r{Found \d+ external resources},
+      CHECK_CAPTURE => %r{Found \d+ external resources},
+      CHECK_VALIDATE => %r{Found 0 external resources},
+      CHECK_TYPE => false,
+      CHECK_POLICY => 'https://privacy.apache.org/faq/committers.html',
+      CHECK_DOC => 'Websites must not link to externally hosted resources',
+    },
+
     'image' => { # Custom: merely looks in IMAGE_DIR for #{id}.*
       CHECK_TEXT => nil,
       CHECK_CAPTURE => nil,
@@ -131,7 +155,12 @@ module SiteStandards
   #   - the name of the project
   def label(analysis, links, col, name)
     if not links[col]
-      SITE_FAIL
+      # Non-PMCs don't need images
+      if col == 'image' and (name == 'attic' or links['nonpmc'])
+        SITE_PASS
+      else
+        SITE_FAIL
+      end
     elsif analysis[2].include? col and not analysis[2][col].include? name
       SITE_WARN
     else
@@ -162,13 +191,22 @@ module SiteStandards
   # @return [hash of site data, crawl_time]
   def get_sites(tlp = true)
     local_copy = File.expand_path("#{get_url(true)}#{get_filename(tlp)}", __FILE__)
-    if File.exist? local_copy
-      crawl_time = File.mtime(local_copy).httpdate # show time in same format as last-mod
-      sites = JSON.parse(File.read(local_copy))
-    else
-      response = Net::HTTP.get_response(URI("#{get_url(false)}#{get_filename(tlp)}"))
-      crawl_time = response['last-modified']
-      sites = JSON.parse(response.body)
+    begin
+      if File.exist? local_copy
+        crawl_time = File.mtime(local_copy).httpdate # show time in same format as last-mod
+        sites = JSON.parse(File.read(local_copy, :encoding => 'utf-8'))
+      else
+        require 'wunderbar'
+        Wunderbar.warn "Failed to find local copy #{local_copy}"
+        local_copy = "#{get_url(false)}#{get_filename(tlp)}"
+        response = Net::HTTP.get_response(URI(local_copy))
+        crawl_time = response['last-modified']
+        sites = JSON.parse(response.body)
+      end
+    rescue StandardError => e
+      require 'wunderbar'
+      Wunderbar.warn "Failed to parse #{local_copy}: #{e.inspect} #{e.backtrace.join("\n\t")}"
+        sites = {}
     end
     return sites, crawl_time
   end

@@ -22,7 +22,7 @@ navigate and update that file.
 Preparation
 ---
 
-This has been tested to work on Mac OSX and Linux.  It likely will not work
+This has been tested to work on macOS and Linux.  It likely will not work
 yet on Windows.
 
 The easiest way to get started is with Docker (see below), but if you
@@ -42,7 +42,7 @@ For planning purposes, prereqs for a _full_ installation will require:
      * Subversion
      * Ruby 1.9.3 or greater
      * Development libraries and tools (for native extensions)
-         * MacOS users
+         * macOS users
              * Xcode command line tools (`sudo xcode-select --install`)
              * `brew install openldap`
              * `brew install cyrus-sasl`
@@ -53,7 +53,7 @@ For planning purposes, prereqs for a _full_ installation will require:
              * `apt-get install build-essential`
      * Node.js 14
      * [PhantomJS](http://phantomjs.org/) 2.0
-         * Mac OS/X Yosemite users should either use `brew install phantomjs`
+         * macOS Yosemite users should either use `brew install phantomjs`
            or get the binary from comments on
            [12900](https://github.com/ariya/phantomjs/issues/12900).
          * Ubuntu users can get a working binary from the comments on
@@ -202,7 +202,7 @@ Viewing Source (this time, Actual Code)
    a stack traceback indicating where the problem is.  Undo this change,
    and then lets continue exploring.
 
- * The [views/forms/add-comment.js.rb](views/forms/add-comment.js.rb) file is
+ * The [views/buttons/add-comment.js.rb](views/buttons/add-comment.js.rb) file is
    probably a more typical example of a component.  The render function is
    more straightforward.  Not mentioned before, but element names followed by
    a dot followed by a name is a shorthand for specifying HTML class
@@ -240,7 +240,7 @@ Viewing Source (this time, Actual Code)
    [views/app.js.rb](views/app.js.rb) lists all of the files that make up the
    client side of the application.
 
- * This brings us back to to the `app.js` script mentioned much earlier.
+ * This brings us back to the `app.js` script mentioned much earlier.
    If you visit [http://localhost:9292/app.js](http://localhost:9292/app.js)
    you will see the full script.  Every bit of this JavaScript was generated
    from the js.rb files mentioned above.  Undoubtedly you have seen small
@@ -267,7 +267,7 @@ Viewing Source (this time, Actual Code)
    [views/layout/footer.js.rb](views/layout/footer.js.rb).
 
  * Should you ever happen to look for the main routing functions, they
-   are [routing.rb](routing.rb) on the server and
+   are [routes.rb](routes.rb) on the server and
    [views/router.js.rb](views/router.js.rb) on the client.
 
 Testing
@@ -316,7 +316,7 @@ Now onto the tests:
     that the back button actually works (verifying the browser `history`
     API calls were made correctly).
 
-  * Finally, [actions_spec.rb](actions_spec.rb) verifies the server side logic
+  * Finally, [spec/actions_spec.rb](spec/actions_spec.rb) verifies the server side logic
     executed in response to posting a comment.
 
 Despite the diversity, the above tests have a lot of commonality and build
@@ -351,7 +351,7 @@ in your home directory.  The file format is YAML, and here is mine:
 
 
 Adapt as necessary.  You don't need to have all those entries in the `svn`
-value to run the board agenda tool.  The `lib` value is is an array of
+value to run the board agenda tool.  The `lib` value is an array of
 libraries that are to be used instead of gems you may have installed.  This is
 useful if you are making changes to the agenda parsing logic, ruby2js or
 wunderbar.  You can remove this too.  If you drop the `ldap` entry, one will
@@ -384,7 +384,7 @@ Congratulations for making it this far.  To recap:
    you needing to expend much effort to make it so.
 
 This code clearly isn't complete.  What I'm looking for is people who are
-wlling to experiment and contribute.  Are you in?
+willing to experiment and contribute.  Are you in?
 
 Sketching out some ideas: adding a new page to the navigation dropdown
 would involve:
@@ -396,20 +396,20 @@ would involve:
   * Adding a Vue component for the page to `views/pages`
   * Adding any new files to [views/app.js.rb](views/app.js.rb)
   * Adding a specification to
-    [specs/other_views_specs.rb](specs/other_views_specs.rb)
+    [spec/other_views_spec.rb](spec/other_views_spec.rb)
 
 Adding a new modal dialog would involve:
 
-  * Adding a entry to the buttons list in
-    [views/models/agenda.rb](views/models/agenda.rb)
+  * Adding an entry to the buttons list in
+    [views/models/agenda.js.rb](views/models/agenda.js.rb)
   * Adding a Vue component for the form to `views/forms`
   * Adding a server side action to `views/actions`.  A number of [actions
     from the current agenda
-    tool](https://svn.apache.org/repos/infra/infrastructure/trunk/projects/whimsy/www/board/agenda/json)
+    tool](https://github.com/apache/whimsy/tree/master/lib/whimsy/asf/agenda)
     should be usable as is.
   * Adding any new files to [views/app.js.rb](views/app.js.rb)
-  * Adding specifications to [specs/forms_specs.rb](specs/forms_specs.rb) and
-    [specs/actions_specs.rb](specs/actions_specs.rb).
+  * Adding specifications to [spec/forms_spec.rb](spec/forms_spec.rb) and
+    [spec/actions_spec.rb](spec/actions_spec.rb).
 
 
 Gotchas
@@ -421,7 +421,7 @@ Nothing is perfect.  Here are a few things to watch out for:
    which includes methods like `File.read` and `YAML.parse`.  On the client,
    Ruby code is translated to JavaScript which only has access to JavaScript
    libraries, which includes methods like `history.pushState` and
-   `JSON.stringify`.  
+   `JSON.stringify`.
 
    [Ruby2JS filters](https://github.com/rubys/ruby2js#filters) reduce this
    gap by converting many common Ruby methods calls to JavaScript equivalents

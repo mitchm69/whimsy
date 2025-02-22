@@ -8,35 +8,34 @@ require 'wunderbar/bootstrap'
 require 'wunderbar/jquery'
 require 'date'
 require 'tmpdir'
-require_relative 'meeting-util'
+require 'whimsy/asf/meeting-util'
 
 # Emit basic instructions and details on quorum
 def emit_instructions(today, cur_mtg_dir, meeting)
+  meeting_display = meeting.gsub(%r{\A(\d\d\d\d)(\d\d)(\d\d)\z}, "\\1-\\2-\\3")
   if today > meeting
     _p.text_warning %{
         WARNING: Data for the next Member's Meeting is not yet available,
         so this form will not work yet.  Please wait until the Board Chair
         announces the opening of nominations for the board and new members,
         and then check back to assign a new proxy for the meeting.
-        Data from the previous meeting on #{meeting} is shown below for debugging only.
+        Data from the previous meeting on #{meeting_display} is shown below for debugging only.
       }
   end
-  if meeting != '20220615'
   _p %{
     This form allows you to assign a proxy for the upcoming
-    Member's Meeting on #{meeting}. If there is any chance you might not be able
-    to attend the first part of the Member's Meeting on Tuesday in IRC, then
-    please assign a proxy, because that helps the meeting reach
-    quorum more quickly - the meeting can't formally continue without quorum at the start.
-    You can still attend the meeting if you want, and you can revoke a
+    Member's Meeting on #{meeting_display}.  Submitting an attendance proxy will
+    help us reach quorum at the start of the meeting - the meeting can't formally
+    continue without quorum at the start.
+
+    You can still vote and attend the meeting if you want, and you can revoke a
     proxy at any time.
   }
   _p %{
-    If you submit a proxy, you will still be sent board and new member ballots by email
-    during the meeting's 46 hour recess (between Tuesday and Thursday,
-    with two hours for vote counting), so you will still need to
-    cast your votes by checking your mail and clicking the links during the recess. If
-    you won't have internet access the week of the meeting, ask
+    If you submit a proxy, you will still be sent ballots by email to your personal
+    @apache.org email address one week ahead of the meeting.
+    
+    If you won't have internet access for the full week of the meeting, ask
     for how to assign a proxy for your vote ballots as well.
   }
   _p do
@@ -46,34 +45,12 @@ def emit_instructions(today, cur_mtg_dir, meeting)
     _code 'proxies'
     _ ' file.  The great majority of proxies assigned are for attendance only; not for voting.'
   end
-  else
-  _p do
-    _ "This form allows you to assign a proxy for the upcoming"
-    _ "Member's Meeting on #{meeting}. For this meeting, we encourage"
-    _strong 'every'
-    _ "ASF member to assign a proxy to the ASF Secretary."
-    _ "Attendance to the meeting is completely optional, and you can revoke a"
-    _ "proxy at any time."
-  end
-  _p %{
-    If you submit a proxy, you will still be sent ballots by email,
-    so you will still need to
-    cast your votes by checking your mail and clicking the links.
-  }
-  _p do
-    _ 'Note while the legal proxy form below states your proxy may have your voting rights, in practice '
-    _strong 'you will still be emailed your ballots'
-    _ ' unless you explicitly mark a \'*\' in the appropriate place in the '
-    _code 'proxies'
-    _ ' file.  The great majority of proxies assigned are for attendance only; not for voting.'
-  end
-  end
-  num_members, quorum_need, num_proxies, attend_irc = MeetingUtil.calculate_quorum(cur_mtg_dir)
+  num_members, quorum_need, num_proxies, attend_irc = ASF::MeetingUtil.calculate_quorum(cur_mtg_dir)
   if num_members
     _p do
       _ 'Currently, we must have '
       _span.text_primary attend_irc
-      _ " Members attend the first half of the #{meeting} meeting and respond to Roll Call to reach quorum and continue the meeting."
+      _ " Members attend the #{meeting_display} meeting and respond to Roll Call to reach quorum and continue the meeting."
       _ " Calculation: Total voting members: #{num_members}, with one third for quorum: #{quorum_need}, minus previously submitted proxies: #{num_proxies}"
     end
   end
@@ -81,7 +58,18 @@ end
 
 # Emit meeting data and form for user to select a proxy - GET
 def emit_form(cur_mtg_dir, meeting, volunteers, disabled)
-  help, copypasta = MeetingUtil.is_user_proxied(cur_mtg_dir, $USER)
+  if disabled
+    _h3 'No upcoming meeting'
+    _p 'There is currently no meeting scheduled. Call back later.'
+    return
+  end
+  begin
+    secretary_id = ASF::Committee.officer('secretary').id
+  rescue StandardError
+    secretary_id = ''
+  end
+
+  help, copypasta = ASF::MeetingUtil.is_user_proxied(cur_mtg_dir, $USER)
   user_is_proxy = help && copypasta
   _whimsy_panel(user_is_proxy ? "You Are Proxying For Others" : "Select A Proxy For Upcoming Meeting", style: 'panel-success') do
     _div do
@@ -108,15 +96,24 @@ def emit_form(cur_mtg_dir, meeting, volunteers, disabled)
       _p.text_warning %{
           NOTE: you are proxying for other members, so you cannot assign
           someone else to proxy for your attendance.  If it turns out that
-          you will not be able to attend the first half of the IRC meeting
-          on Tuesday, you MUST work with the Board Chair and your proxies
-          to update the proxy records, and get someone else to mark their presence!
+          you will not be able to attend the IRC meeting on Thursday,
+          you MUST work with the Board Chair and your proxies to update the
+          proxy records, and get someone else to mark their presence!
         }
     else
       _div.well.well_lg do
-        _form method: 'POST' do
+        _form method: 'POST', onsubmit: 'return validateForm();' do
           _div.form_group do
             _label 'Select proxy'
+            _b do
+              _p %{
+                WARNING: If you select someone other than the Chair or Secretary (*), please note
+                that your proxy will not be counted if the person is unable to attend.              }
+            end
+            _p %{
+              (* The meeting will be postponed if the Chair and/or Secretary cannot attend)
+            }
+
 
             # Fetch LDAP
             ldap_members = ASF.members
@@ -133,29 +130,28 @@ def emit_form(cur_mtg_dir, meeting, volunteers, disabled)
               if meeting != '20220615'
                 _option 'Select an ASF Member', :selected, value: ''
               end
-
-              ldap_members.sort_by(&:public_name).each do |member|
+              # Allow for missing public name (should not happen unless LDAP is inconsistent)
+              ldap_members.sort_by{|m| m.public_name || '_'}.each do |member|
                 next if member.id == $USER               # No self proxies
                 next if exclude.include? member.id       # Not attending
                 next unless members_txt[member.id]       # Non-members
                 next if members_txt[member.id]['status'] # Emeritus/Deceased
                 # Display the availid to users to match volunteers array above
-                _option "#{member.public_name} (#{member.id})",
-                  selected: (meeting == '20220615' && member.id == 'mattsicker')
+                _option "#{member.public_name || '?No public name?'} (#{member.id})",
+                  selected: (member.id == secretary_id)
               end
             end
           end
           _div_.form_group do
             _p do
+              _b 'Note that you cannot select a member who has nominated a proxy'
+            end
+            _p do
               _ "IMPORTANT! Be sure to tell the person that you select as proxy above that you've assigned them to mark your attendance! They simply need to mark your proxy attendance when the meeting starts."
               _a 'Read full procedures for Member Meeting', href: 'https://www.apache.org/foundation/governance/members.html#meetings'
             end
             _div.button_group.text_center do
-              if disabled
-                _button.btn.btn_primary 'Submit', :disabled
-              else
-                _button.btn.btn_primary 'Submit'
-              end
+              _button.btn.btn_primary 'Submit'
             end
           end
         end
@@ -164,11 +160,17 @@ def emit_form(cur_mtg_dir, meeting, volunteers, disabled)
     end
   end
 
-##    _script src: "js/jquery-1.11.1.min.js"
-##    _script src: "js/bootstrap.min.js"
   _script src: "js/bootstrap-combobox.js" # TODO do we need this still?
 
   _script_ %{
+    function validateForm() {
+      if ($('.combobox').val() == '')  {
+        alert("A proxy name is required");
+        return false;
+      }
+      return true;
+    }
+
     // convert select into combobox
     $('.combobox').combobox();
 
@@ -184,6 +186,9 @@ end
 
 # Emit a record of a user's submission - POST
 def emit_post(cur_mtg_dir, meeting, _)
+  # Detect missing/invalid proxy info (should not happen)
+  raise ArgumentError,"Invalid proxy name '#{@proxy}'" unless @proxy =~ %r{\A.+ \([a-z0-9-]+\)\z}
+
   _h3_ 'Proxy Assignment - Session Transcript'
 
   # collect data
@@ -216,7 +221,7 @@ def emit_post(cur_mtg_dir, meeting, _)
                     {quiet: true, user: $USER, password: $PASSWORD})
       Dir.chdir(tmpdir) do
         # write proxy form
-        filename = "proxies-received/#$USER.txt"
+        filename = "proxies-received/#{$USER}.txt"
         update_existing_form = File.exist? filename
         File.write(filename, proxyform)
         unless update_existing_form
@@ -228,11 +233,12 @@ def emit_post(cur_mtg_dir, meeting, _)
         list = Dir['proxies-received/*.txt'].map do |file|
           form = File.read(file)
 
-          id = file[/([-A-Za-z0-9]+)\.\w+$/, 1]
+          id = File.basename(file, '.txt') # assume filename is a valid id
           proxy = form[/hereby authorize ([\S].*) to act/, 1].
             gsub('_', ' ').strip
           # Ensure availid is not included in proxy name here
-          proxy = proxy[/([^(]+)/, 1].strip
+          proxy.sub!(%r{\([^)]+\)}, '')
+          proxy.strip!
           name = form[/signature: ([\S].*)/, 1].gsub(/[\/_]/, ' ').strip
 
           "   #{proxy.ljust(24)} #{name} (#{id})"
@@ -292,7 +298,7 @@ _html do
   _body? do
     # Find latest meeting and check if it's in the future yet
     MEETINGS = ASF::SVN['Meetings']
-    cur_mtg_dir = MeetingUtil.get_latest(MEETINGS)
+    cur_mtg_dir = ASF::MeetingUtil.get_latest(MEETINGS)
     meeting = File.basename(cur_mtg_dir)
     today = Date.today.strftime('%Y%m%d')
     _whimsy_body(
@@ -310,9 +316,14 @@ _html do
       }
     ) do
       if _.get?
-        emit_form(cur_mtg_dir, meeting, MeetingUtil::getVolunteers(cur_mtg_dir), today > meeting)
+        emit_form(cur_mtg_dir, meeting, ASF::MeetingUtil::getVolunteers(cur_mtg_dir), today > meeting)
       else # POST
-        emit_post(cur_mtg_dir, meeting, _)
+        # WHIMSY-409: improve UI
+        begin
+          emit_post(cur_mtg_dir, meeting, _)
+        rescue ArgumentError => e
+          _h2_.text_danger {_span.label.label_danger e}
+        end
       end
     end
   end

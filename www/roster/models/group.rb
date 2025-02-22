@@ -7,34 +7,37 @@ class Group
     # start with groups that aren't PMCs or podlings etc
     groups = ASF::Group.list.map(&:id)
     groups -= ASF::Project.listids # These are PMCs and podlings and other committees
-    groups.map! {|group| [group, "LDAP group"]}
+    groups.map! {|group| [group, 'LDAP group']}
 
     # add services...
-    groups += ASF::Service.listcns.reject{|s| s=='apldap'}.map {|service| [service, "LDAP service"]}
+    groups += ASF::Service.listcns.reject {|s| s == 'apldap'}.map {|service| [service, 'LDAP service']}
 
     # add authorization (asf and pit)
     groups += ASF::Authorization.new('asf').to_h.
-      map {|id, list| [id, "ASF Auth"]}
+      map {|id, _list| [id, 'ASF Auth']}
 
     groups += ASF::Authorization.new('pit').to_h.
-      map {|id, list| [id, "PIT Auth"]}
+      map {|id, _list| [id, 'PIT Auth']}
 
     # add authorization groups (LDAP)
-    groups += ASF::AuthGroup.listcns.map {|group| [group, "LDAP Auth Group"]}
-
-    # add app groups
-    groups += ASF::AppGroup.listcns.map {|app| [app, "LDAP app group"]}
+    groups += ASF::AuthGroup.listcns.map {|group| [group, 'LDAP Auth Group']}
 
     groups.sort
   end
 
-  def self.serialize(id)
+  # The id 'svnadmins' currently has two definitions
+  # LDAP Auth Group and LDAP service
+  # See INFRA-24565
+  # So the type can now be provided as a work-round
+  def self.serialize(id, itype=nil)
     response = {}
+
+    member_status = ASF::Member.member_statuses
 
     type = 'LDAP group'
     group = ASF::Group.find(id)
 
-    unless group.hasLDAP?
+    unless group.hasLDAP? or (%w{treasurer svnadmins}.include?(id) and (itype !~ %r{Auth Group}i))
       type = 'LDAP auth group'
       group = ASF::AuthGroup.find(id)
     end
@@ -44,22 +47,17 @@ class Group
       group = ASF::Service.find(id)
     end
 
-    unless group.hasLDAP?
-      type = 'LDAP app group'
-      group = ASF::AppGroup.find(id)
-    end
-
     if group.hasLDAP?
       # LDAP group
 
-      people = ASF::Person.preload('cn', group.members)
+      _people = ASF::Person.preload('cn', group.members)
 
       response = {
         id: id,
         type: type,
         dn: (group.dn rescue ''), # not all groups have a DN
         members: Hash[group.members.map {|person| [person.id, (person.cn rescue '**Entry missing from LDAP people**')]}], # if id not in people
-        asfmembers: group.members.select{|person| ASF.members.include?(person)}.map(&:id),
+        memberstatus: group.members.map{|person| [person.id, member_status[person.id]]}.to_h,
       }
 
       if id == 'hudson-jobadmin'
@@ -72,23 +70,23 @@ class Group
       type = 'asf-auth'
       group = ASF::Authorization.new('asf').to_h[id]
 
-      if not group
+      unless group
         type = 'pit-auth'
         group = ASF::Authorization.new('pit').to_h[id]
       end
 
       if group
-        group.map! {|id| ASF::Person.find(id)}
+        group.map! {|id1| ASF::Person.find(id1)}
 
         # auth group
-        people = ASF::Person.preload('cn', group)
+        _people = ASF::Person.preload('cn', group)
 
         response = {
           id: id,
           type: type,
           dn: (group.dn rescue ''), # not all groups have a DN
           members: Hash[group.map {|person| [person.id, person.cn]}],
-          asfmembers: group.select{|person| ASF.members.include?(person)}.map(&:id),
+          memberstatus: group.map{|person| [person.id, member_status[person.id]]}.to_h,
         }
       end
     end

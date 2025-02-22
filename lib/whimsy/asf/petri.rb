@@ -3,7 +3,7 @@ require 'net/http'
 module ASF
 
   # Represents a Petri culture
-  # currently defined in 
+  # currently defined in
   # https://petri.apache.org/info.yaml
 
   PETRI_INFO = 'https://petri.apache.org/info.yaml'
@@ -22,6 +22,7 @@ module ASF
     attr_reader :wiki
     attr_reader :release
     attr_reader :licensing
+    attr_accessor :error
 
     def initialize(entry)
       key, hash = entry
@@ -37,7 +38,19 @@ module ASF
       yaml = YAML.safe_load(response.body, permitted_classes: [Symbol])
       # @mentors = yaml['mentors']
       yaml['cultures'].each do |proj|
-        @list << new(proj)
+        prj = new(proj)
+        if yaml['projects'].include? proj
+          prj.error = 'Listed as a current project' unless prj.status == 'current'
+        else
+          prj.error = 'Not listed as a current project' if prj.status == 'current'
+        end
+        @list << prj
+      end
+      # Now check against projects listing
+      yaml['projects'].each do |proj|
+        unless yaml['cultures'].include? proj
+          @list << new([proj,{name: '', status: '', error: 'No culture entry found'}])
+        end
       end
       @list
     end

@@ -17,7 +17,7 @@ Danger - File more than 24 hours old or Exception while processing
 require 'fileutils'
 require 'time'
 
-def Monitor.public_json(previous_status)
+def StatusMonitor.public_json(previous_status)
   danger_period = 86_400 # one day
 
   warning_period = 5400 # 1.5 hours
@@ -29,6 +29,8 @@ def Monitor.public_json(previous_status)
   FileUtils.mkdir(archive) unless File.directory?(archive)
 
   status = {}
+
+  sendMail = Status.active?
 
   Dir[logs].each do |log|
     name = File.basename(log).sub('public-', '').to_sym
@@ -43,22 +45,28 @@ def Monitor.public_json(previous_status)
       contents_save = contents.dup # in case we need to send an email
 
       # Ignore Wunderbar logging for normal messages (may occur multiple times)
-      contents.gsub! /^(_INFO|_DEBUG) .*?\n+/, ''
+      contents.gsub!(/^(_INFO|_DEBUG) .*?\n+/, '')
 
       # diff -u output: (may have additional \n at end)
-      if contents.gsub! /^--- .*?\n\n?(\n|\Z)/m, ''
+      if contents.gsub!(/^--- .*?\n\n?(\n|\Z)/m, '')
         status[name].merge! level: 'info', title: 'updated'
       end
 
       # Wunderbar warning
       warnings = contents.scan(/^_WARN (.*?)\n+/)
       if warnings.length == 1
-        contents.sub! /^_WARN (.*?)\n+/, ''
+        contents.sub!(/^_WARN (.*?)\n+/, '')
         status[name].merge! level: 'warning', data: $1
       elsif warnings.length > 0
-        contents.gsub! /^_WARN (.*?)\n+/, ''
+        contents.gsub!(/^_WARN (.*?)\n+/, '')
         status[name].merge! level: 'warning', data: warnings.flatten,
           title: "#{warnings.length} warnings"
+      end
+
+      # Ruby warnings, e.g.
+      # /usr/lib/ruby/2.7.0/net/protocol.rb:66: warning: previous definition of ProtocRetryError was here
+      if contents.gsub!(%r{^/((?:var|usr|/srv/gems)/lib/\S+): (warning:.*?)\n+}, '')
+        status[name].merge! level: 'warning', data: $2 unless $1.include? '/net/protocol.rb:' # can't fix this
       end
 
       # Check to see if the log has been updated recently
@@ -72,6 +80,8 @@ def Monitor.public_json(previous_status)
         status[name].merge! level: 'danger',
           data: "Last updated: #{File.mtime(log).to_s} (more than 24 hours old)"
       end
+
+      contents.gsub!(%r{^\s+$} , '') # drop any remaining blank lines
 
       # Treat everything left as an error to be reported
       unless contents.empty?
@@ -91,25 +101,30 @@ def Monitor.public_json(previous_status)
           # Save a copy of the log; append the severity so can track more problems
           file = File.basename(log)
           FileUtils.copy log, File.join(archive, file + '.' + lvl), preserve: true
-          begin
-            require 'mail'
-            $LOAD_PATH.unshift '/srv/whimsy/lib'
-            require 'whimsy/asf'
-            ASF::Mail.configure
-            mail = Mail.new do
-              from 'Public JSON job monitor  <dev@whimsical.apache.org>'
-              to 'Notification List <notifications@whimsical.apache.org>'
-              subject "Problem (#{lvl}) detected in #{name} job"
-              body "\nLOG:\n#{contents_save}\nSTATUS: #{status[name]}\n"
+          subject = "Problem (#{lvl}) detected in #{name} job"
+          if sendMail
+            begin
+              require 'mail'
+              $LOAD_PATH.unshift '/srv/whimsy/lib'
+              require 'whimsy/asf'
+              ASF::Mail.configure
+              mail = Mail.new do
+                from 'Public JSON job monitor  <dev@whimsical.apache.org>'
+                to 'Notification List <notifications@whimsical.apache.org>'
+                subject subject
+                body "\nLOG:\n#{contents_save}\nSTATUS: #{status[name]}\n"
+              end
+              # in spite of what the docs say, this does not seem to work in the body above
+              mail.charset = 'utf-8'
+              # Replace .mail suffix with more accurate one
+              mail.message_id = "<#{Mail.random_tag}@#{::Socket.gethostname}.apache.org>"
+              # deliver mail
+              mail.deliver!
+            rescue => e
+              $stderr.puts "Send mail failed: exception #{e}" # record error in server log
             end
-            # in spite of what the docs say, this does not seem to work in the body above
-            mail.charset = 'utf-8'
-            # Replace .mail suffix with more accurate one
-            mail.message_id = "<#{Mail.random_tag}@#{::Socket.gethostname}.apache.org>"
-            # deliver mail
-            mail.deliver!
-          rescue => e
-            $stderr.puts "Send mail failed: exception #{e}" # record error in server log
+          else
+            $stderr.puts "Did not detect active status, not sending mail: #{subject}"
           end
         end
       end
@@ -131,8 +146,9 @@ def Monitor.public_json(previous_status)
   {data: status}
 end
 
-# for debugging purposes
+# for debugging purposes; must be run from www/status currently
 if __FILE__ == $0
+  $LOAD_PATH.unshift '/srv/whimsy/lib'
   require_relative 'unit_test'
   runtest('public_json') # must agree with method name above
 end

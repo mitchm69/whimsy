@@ -56,7 +56,8 @@ $versions = Hash.new {|h1, k1| h1[k1] = Hash.new {|h2, k2| h2[k2] = Array.new} }
 # match an artifact
 # TODO detect artifacts by URL as well if possible
 # $1 = base, $2 = extension
-ARTIFACT_RE = %r{/([^/]+\.(pom|tar|tar\.xz|tar\.gz|deb|nbm|dmg|sh|zip|tgz|far|tar\.bz2|jar|whl|war|msi|exe|rar|rpm|nar|xml))([&?]action=download)?$}
+# OOO SF links end in /download
+ARTIFACT_RE = %r{/([^/]+\.(pom|crate|tar|tar\.xz|tar\.gz|deb|nbm|dmg|sh|zip|tgz|far|tar\.bz2|jar|whl|war|msi|exe|rar|rpm|nar|xml|vsix))([&?]action=download|/download)?$}
 
 def init
   # build a list of validation errors
@@ -64,13 +65,13 @@ def init
   @fails = 0
   if $NO_CHECK_LINKS
     $NOFOLLOW = true
-    I "Will not check links"
+    I 'Will not check links'
   elsif $ALWAYS_CHECK_LINKS
-    I "Will check links even if download page has errors"
+    I 'Will check links even if download page has errors'
   else
-    I "Will check links if download page has no errors"
+    I 'Will check links if download page has no errors'
   end
-  I "Will %s archive.apache.org links in checks" % ($ARCHIVE_CHECK ? 'include' : 'not include')
+  I 'Will %s archive.apache.org links in checks' % ($ARCHIVE_CHECK ? 'include' : 'not include')
 end
 
 # save the result of a test
@@ -137,11 +138,11 @@ def displayHTML
   end
 
   if @fails > 0
-    showList(fatals, "Fatal errors:")
-    showList(errors, "Errors:")
+    showList(fatals, 'Fatal errors:')
+    showList(errors, 'Errors:')
   end
 
-  showList(warns, "Warnings:")
+  showList(warns, 'Warnings:')
 
   _h2_ 'Tests performed'
   _ol do
@@ -154,7 +155,7 @@ def check_url(url)
   uri = URI.parse(url)
   unless uri.scheme
     W "No scheme for URL #{url}, assuming http"
-    uri = URI.parse("http:" + url)
+    uri = URI.parse('http:' + url)
   end
   return uri if %w{http https}.include? uri.scheme
   raise ArgumentError.new("Unexpected url: #{url}")
@@ -244,12 +245,13 @@ def check_hash_loc(h, tlp)
   tlpQE = Regexp.escape(tlp) # in case of meta-chars
   tlpQE = "(?:ooo|#{tlpQE})" if tlp == 'openoffice'
   tlpQE = "(?:lucene|#{tlpQE})" if tlp == 'solr' # temporary override
-  tlpQE = "(?:tubemq|inlong)" if tlp == 'inlong' # renamed
-  tlpQE = "(?:hadoop/)?ozone" if tlp == 'ozone' # moved
+  tlpQE = '(?:tubemq|inlong)' if tlp == 'inlong' # renamed
+  tlpQE = '(?:hadoop/)?ozone' if tlp == 'ozone' # moved
   if h =~ %r{^(https?)://(?:(archive|www)\.)?apache\.org/dist/(?:incubator/)?#{tlpQE}/.*?([^/]+)\.(\w{3,6})$}
     WE "HTTPS! #{h}" unless $1 == 'https'
     return $2 || '', $3, $4 # allow for no host before apache.org
-  elsif h =~ %r{^(https?)://(downloads)\.apache\.org/(?:incubator/)?#{tlpQE}/.*?([^/]+)\.(\w{3,6})$}
+#     Allow // after .org (pulsar)
+  elsif h =~ %r{^(https?)://(downloads)\.apache\.org//?(?:incubator/)?#{tlpQE}/.*?([^/]+)\.(\w{3,6})$}
     WE "HTTPS! #{h}" unless $1 == 'https'
     return $2, $3, $4
 #   https://repo1.maven.org/maven2/org/apache/shiro/shiro-spring/1.1.0/shiro-spring-1.1.0.jar.asc
@@ -272,7 +274,7 @@ def get_links(path, body, checkSpaces=false)
   doc = Nokogiri::HTML(body)
   nodeset = doc.css('a[href]')    # Get anchors w href attribute via css
   nodeset.map { |node|
-    tmp = node.attribute("href").to_s
+    tmp = node.attribute('href').to_s
     href = tmp.strip
     if checkSpaces && tmp != href
       W "Spurious space(s) in '#{tmp}'"
@@ -280,7 +282,8 @@ def get_links(path, body, checkSpaces=false)
     if href =~ %r{^?Preferred=https?://}
       href = path + URI.decode_www_form_component(href)
     end
-    text = node.text.gsub(/[[:space:]]+/, ' ').strip
+    # Strip spurious text from link (age, baremaps)
+    text = node.text.gsub(/[[:space:]]+/, ' ').sub('(opens in a new tab)', '').sub('➚', '').strip
     [href, text] unless href =~ %r{/httpcomponents.+/xdoc/downloads.xml} # breadcrumb link to source
   }.select {|x, _y| x =~ %r{^(https?:)?//} }
 end
@@ -305,6 +308,7 @@ VERIFY_TEXT = [
   'To check a GPG signature',
   'To verify Hadoop',
   'Instructions for verifying your mirrored downloads', # fineract
+  'How to verify the download?', # OOO
 ]
 
 ALIASES = {
@@ -312,6 +316,7 @@ ALIASES = {
   'pgp' => 'asc',
   'gpg' => 'asc',
   'pgpasc' => 'asc',
+  'sign' => 'asc',
   'signature' => 'asc',
   'signature(.asc)' => 'asc',
   'ascsignature' => 'asc',
@@ -329,10 +334,14 @@ URL2TLP['jspwiki-wiki'] = 'jspwiki' # https://jspwiki-wiki.apache.org/Wiki.jsp?p
 URL2TLP['xmlbeans'] = 'poi' # xmlbeans now being maintained by POI
 PMCS = Set.new # is this a TLP?
 ASF::Committee.pmcs.map do |p|
-  site = p.site[%r{//(.+?)\.apache\.org}, 1]
   name = p.name
-  URL2TLP[site] = name unless site == name
   PMCS << name
+  if p.site
+    site = p.site[%r{//(.+?)\.apache\.org}, 1]
+    URL2TLP[site] = name unless site == name
+  else
+    Wunderbar.warn "PMC has no site: #{name}"
+  end
 end
 
 # Convert text reference to extension
@@ -371,7 +380,11 @@ def _checkDownloadPage(path, tlp, version)
   end
 
   # check the main body
-  body = check_page(path)
+  if $ALLOW_JS
+    body = `/srv/whimsy/tools/render-page.js #{path}`
+  else
+    body = check_page(path)
+  end
 
   return unless body
 
@@ -387,20 +400,23 @@ def _checkDownloadPage(path, tlp, version)
 
   # Some pages are mainly a single line (e.g. Hop)
   # This make matching the appropriate match context tricky without traversing the DOM
-  body.scan(%r{(^.*?([^<>]+?(nightly|snapshot)[^<>]+?)).*$}i) do |m|
-    m.each do |n|
-      if n.size < 160
-        if n =~ %r{API |/api/|-docs-} # snapshot docs Datasketches (Flink)?
-          W "Found reference to NIGHTLY or SNAPSHOT docs?: #{n}"
-        else
-          # ignore trafficcontrol bugfix message
-          unless n.include? "Fixed TO log warnings when generating snapshots" or
-                 n.include? "Kafka Raft support for snapshots" or
-                 n.include? "zkSnapshotC" # ZooKeeper
-            E "Found reference to NIGHTLY or SNAPSHOT builds: #{n}"
+  if body =~ %r{nightly|snapshot}i # scan can be expensive, so skip if unneeded
+    body.scan(%r{(^.*?([^<>]+?(nightly|snapshot)[^<>]+?)).*$}i) do |m|
+      m.each do |n|
+        if n.size < 160
+          if n =~ %r{API |/api/|-docs-} # snapshot docs Datasketches (Flink)?
+            W "Found reference to NIGHTLY or SNAPSHOT docs?: #{n}"
+          else
+            # ignore trafficcontrol bugfix message
+            unless n.include? 'Fixed TO log warnings when generating snapshots' or
+                  n.include? 'Kafka Raft support for snapshots' or
+                  n.include? 'zkSnapshotC' or # ZooKeepeer
+                  n.include? '/issues.apache.org/jira/browse/' # Daffodil
+              W "Found reference to NIGHTLY or SNAPSHOT builds: #{n}"
+            end
           end
+          break
         end
-        break
       end
     end
   end
@@ -425,12 +441,12 @@ def _checkDownloadPage(path, tlp, version)
   end
 
   if $CLI
-    puts "Checking link syntax"
+    puts 'Checking link syntax'
     links.each do |h, t|
       if h =~ %r{^([a-z]{3,6})://}
-        W "scheme? %s %s" % [h, t] unless %w(http https).include? $1
+        W 'scheme? %s %s' % [h, t] unless %w(http https).include? $1
       else
-        W "syntax? %s %s" % [h, t] unless h.start_with? '//'
+        W 'syntax? %s %s' % [h, t] unless h.start_with? '//'
       end
     end
   end
@@ -449,7 +465,7 @@ def _checkDownloadPage(path, tlp, version)
   if keys.size >= 1
     keyurl = keys.first.first
     keytext = keys.first[1]
-    if keytext.strip == 'KEYS'
+    if keytext.include? 'KEYS'
       I 'Found KEYS link'
     else
       W "Found KEYS: '#{keytext}'"
@@ -477,8 +493,10 @@ def _checkDownloadPage(path, tlp, version)
 
   hasGPGverify = false
   # Check if GPG verify has two parameters
-  body.scan(%r{^.+gpg --verify.+$}) { |m|
+  body.scan(%r{gpg --verify.+$}) { |m|
     hasGPGverify = true
+    # Hack to tidy matched text: drop spans and truncate at <br> or <div>
+    m = m.gsub(%r{<span [^>]+>|</span>}, '').sub(%r{(<div|<br).+},'') # sub! returns nil if no change
     unless m =~ %r{gpg --verify\s+\S+\.asc\s+\S+}
       W "gpg verify should specify second param: #{m.strip} see:\nhttps://www.apache.org/info/verification.html#specify_both"
     end
@@ -568,14 +586,13 @@ def _checkDownloadPage(path, tlp, version)
       else
         E "Bug: found hash #{h} for missing artifact #{stem}"
       end
-      t.strip!
       next if t == '' # empire-db
       tmp = text2ext(t)
       next if ext == tmp # i.e. link is just the type or [TYPE]
       next if ext == 'sha' and tmp == 'sha1' # historic
-      next if %w(sha256 md5 mds sha512 sha1).include?(ext) and %w(SHA digest Digest checksums).include?(t) # generic
+      next if %w(sha256 md5 mds sha512 sha1).include?(ext) and %w(SHA digest Digest CheckSum checksums).include?(t) # generic
       next if ext == 'mds' and (tmp == 'hashes' or t == 'Digests')
-      if base != t
+      unless base == t or h == t # Allow for full path to sig/hash
         if t == 'Download' # MXNet
           W "Mismatch: #{h} and '#{t}'"
         elsif not %w{checksum Hash}.include? t
@@ -594,10 +611,10 @@ def _checkDownloadPage(path, tlp, version)
   $vercheck.each do |k, w|
     v = w.dup
     typ = v.shift
-    unless v.include? "asc" and v.any? {|e| e =~ /^sha\d+$/ or e == 'md5' or e == 'sha' or e == 'mds'}
-      if typ == 'live' || typ == 'maven'
+    unless v.include? 'asc' and v.any? {|e| e =~ /^sha\d+$/ or e == 'md5' or e == 'sha' or e == 'mds'}
+      if typ == 'live'
         E "#{k} missing sig/hash: (found only: #{v.inspect})"
-      elsif typ == 'archive'
+      elsif typ == 'archive' || typ == 'maven' # Maven does not include recent hash types; so warn only
         W "#{k} missing sig/hash: (found only: #{v.inspect})"
       else
         E "#{k} missing sig/hash: (found only: #{v.inspect}) TYPE=#{typ}"
@@ -607,13 +624,13 @@ def _checkDownloadPage(path, tlp, version)
   end
 
   if @fails > 0 and not $ALWAYS_CHECK_LINKS
-    W "** Not checking links **"
+    W '** Not checking links **'
     $NOFOLLOW = true
   end
 
   # Still check links if versions not seen
   if $versions.size == 0
-    E "Could not detect any artifact versions -- perhaps it needs JavaScript?"
+    E 'Could not detect any artifact versions -- perhaps it needs JavaScript?'
   end
 
   # Check if the links can be read
@@ -707,7 +724,7 @@ def _checkDownloadPage(path, tlp, version)
           if ct and cl
             I "OK: #{ct} #{cl} #{path}"
           elsif cl
-            W "NAK: ct='#{ct}' cl='#{cl}' #{path}"
+            I "NAK: ct='#{ct}' cl='#{cl}' #{path}"
           else
             E "NAK: ct='#{ct}' cl='#{cl}' #{path}"
           end
@@ -798,6 +815,7 @@ if __FILE__ == $0
   $ALLOW_HTTP = ARGV.delete '--http'
   $FAIL_FAST = ARGV.delete '--ff'
   $SHOW_LINKS = ARGV.delete '--show-links'
+  $ALLOW_JS = ARGV.delete '--js-allow'
 
   # check for any unhandled options
   ARGV.each do |arg|
@@ -820,31 +838,31 @@ if __FILE__ == $0
   checkDownloadPage(url, tlp, version)
 
   # display the test results as text
-  puts ""
-  puts "================="
-  puts ""
+  puts ''
+  puts '================='
+  puts ''
   @tests.each { |t| t.map {|k, v| puts "#{k}: - #{v}"}}
-  puts ""
+  puts ''
   testentries(:W).each { |t| t.map {|k, v| puts "#{k}: - #{v}"}}
   testentries(:E).each { |t| t.map {|k, v| puts "#{k}: - #{v}"}}
   testentries(:F).each { |t| t.map {|k, v| puts "#{k}: - #{v}"}}
-  puts ""
+  puts ''
 
   # Only show in CLI version for now
-  puts "Version summary"
+  puts 'Version summary'
   $versions.sort.each do |k, v|
     puts k
     v.sort.each do |l, w|
       puts "  #{l} #{w}"
     end
   end
-  puts ""
+  puts ''
 
   if @fails > 0
     puts "NAK: #{url} had #{@fails} errors"
   else
     puts "OK: #{url} passed all the tests"
   end
-  puts ""
+  puts ''
 
 end

@@ -5,7 +5,7 @@ Whimsy is a set of independent tools and a common library which typically will
 need to access various ASF SVN directories and/or LDAP.  To do development and
 testing, you will need access to a machine on which you are willing to install
 libraries which do things like access LDAP, XML parsing, ASF Subversion repos,
-composing mail and the like for full functionality.  
+composing mail and the like for full functionality.
 
 Contents :books:
 -------
@@ -32,7 +32,7 @@ Contents :books:
 Architecture Overview
 ========
 
-The core Whimsy code is split into model/view, plus a variety of 
+The core Whimsy code is split into model/view, plus a variety of
 tools, some of which use the model, and some completely independent.
 
 1. [lib/whimsy/asf](lib/whimsy/asf) contains the "model", i.e., a set of classes
@@ -55,14 +55,14 @@ tools, some of which use the model, and some completely independent.
    Directories containing Rack applications can be identified by the presence
    of a file with the name of `config.ru`.
 
-3. [tools](tools) contains miscellaneous and testing tools, as well as 
+3. [tools](tools) contains miscellaneous and testing tools, as well as
    scripts that may generate intermediate data files.
 
-4. [config](config) contains some sample configuration data for 
+4. [config](config) contains some sample configuration data for
    installing various services needed.
 
-5. [www/roster/public\_\*](www/roster) contains a number of scripts run 
-   by cron jobs or manually that create various data files in 
+5. [www/roster/public\_\*](www/roster) contains a number of scripts run
+   by cron jobs or manually that create various data files in
    [www/public on the production instance](https://whimsy.apache.org/public/).
 
 Setup Whimsy Locally
@@ -70,7 +70,7 @@ Setup Whimsy Locally
 
 This section is for those desiring to run a whimsy tool on their own machine.
 [See below for deploying](#advanced-configuration) in a Docker container or a Vagrant VM,
-or read the [detailed MACOSX setup steps](MACOSX.md).
+or read the [detailed macOS setup steps](MACOS.md).
 
 1. **Setup ruby 2.3.x or higher.**  Verify with `ruby -v`.
    If you use a system provided version of Ruby, you may need to prefix
@@ -92,7 +92,7 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
 
    `gem install bundler`  (mail and listen may be needed too)
 
-   - If you're using [Mac OS El Capitan or higher](MACOSX.md), you may need to do this:
+   - If you're using [macOS El Capitan or higher](MACOS.md), you may need to do this:
 
    `sudo gem install bundler -n /usr/local/bin`
 
@@ -104,14 +104,14 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
         svn co --depth=files https://svn.apache.org/repos/private/foundation
 
    You can specify an alternate location for these directories by placing
-   a YAML [configuration file](CONFIGURE.md) named `.whimsy` in your home 
+   a YAML [configuration file](CONFIGURE.md) named `.whimsy` in your home
    directory  An minimal example (be sure to include the dashed lines!):
 
         :svn:
         - /home/rubys/svn/foundation
         - /home/rubys/svn/committers
-   
-   See repository.yml for a full list of repos needed.  Different tools 
+
+   See repository.yml for a full list of repos needed.  Different tools
    require different local checkouts to function; some require git clone.
 
 4. **Configure LDAP** servers and certificates:
@@ -120,7 +120,7 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
     1. The model code determines what host and port to connect to by parsing
       either `/etc/ldap/ldap.conf` or `/etc/openldap/ldap.conf` for a line that
       looks like the following (the host name may be different):
-        `uri     ldaps://ldap-us-ro.apache.org:636`
+        `uri     ldaps://ldap-us.apache.org:636`
 
     2. A `TLS_CACERT` can be obtained via either of the following commands:
 
@@ -130,12 +130,12 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
       For openssl, copy from the LAST `BEGIN` to `END` inclusive into the file `/etc/ldap/asf-ldap-client.pem`.
       Point to the file in `/etc/ldap/ldap.conf` with a line like the following:
 
-     ```   TLS_CACERT      /etc/ldap/asf-ldap-client.pem```
+      `TLS_CACERT      /etc/ldap/asf-ldap-client.pem`
 
      If multiple different certificates are needed, they should all be added to the same file.
      [The option `TLS_CACERTDIR` is not used Ubuntu for example]
 
-      N.B. OpenLDAP on Mac OS/X uses `/etc/openldap/` instead of `/etc/ldap/`
+      N.B. OpenLDAP on macOS uses `/etc/openldap/` instead of `/etc/ldap/`
       Adjust the paths above as necessary.
       Also (on Catalina at least), macOS uses SecureTransport.
       This means that `TLS_CACERT` is not used.
@@ -160,8 +160,8 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
    `ruby examples/board.rb`
 
    It should print out an HTML page with current board members.
-   See comments in the `board.rb` file for running the script as a 
-   standalone server to view in a local web browser.  This test script 
+   See comments in the `board.rb` file for running the script as a
+   standalone server to view in a local web browser.  This test script
    verifies the environment used by many, but not all, Whimsy tools.
 
 2. **Configure mail sending** :mailbox_with_mail: (_optional_):
@@ -188,7 +188,7 @@ or read the [detailed MACOSX setup steps](MACOSX.md).
           authentication: plain
           enable_starttls_auto: true
 
-   For more details, see the mail gem documention for
+   For more details, see the mail gem documentation for
    [smtp](http://www.rubydoc.info/github/mikel/mail/Mail/SMTP),
    [exim](http://www.rubydoc.info/github/mikel/mail/Mail/Exim),
    [sendmail](http://www.rubydoc.info/github/mikel/mail/Mail/Sendmail),
@@ -200,8 +200,8 @@ Running Whimsy Applications :car:
 
 If there is a `Gemfile` in the directory containing the script or application
 you wish to run, dependencies needed for execution can be installed using the
-command `bundle install`.  Similarly, if starting from scratch you 
-may need `gem install rake`.  Periodically if underlying gems like 
+command `bundle install`.  Similarly, if starting from scratch you
+may need `gem install rake`.  Periodically if underlying gems like
 wunderbar are updated, you may need `bundle update`.  
 See also [How To: Keep Your Local Environment Updated](#how-to-keep-your-local-environment-updated)
 
@@ -237,7 +237,7 @@ Advanced Configuration
 Setting things up so that the **entire** whimsy website is available as
 a virtual host, complete with authentication:
 
-1. Install passenger by running either running 
+1. Install passenger by running either running
    `passenger-install-apache2-module` and following its instructions, or
    by visiting https://www.phusionpassenger.com/library/install/apache/install/oss/.
 
@@ -252,7 +252,7 @@ a virtual host, complete with authentication:
       Enable the modules you need using `a2ensite`.  Restart the Apache httpd
       web server using `service apache2 restart`.
 
-   b. [On Mac OS/X](MACOSX.md), place the generated vhost definition into
+   b. [On macOS](MACOS.md), place the generated vhost definition into
       `/private/etc/apache2/extra/httpd-vhosts.conf`.  Edit
       `/etc/apache2/httpd.conf` and uncomment out the line that includes
       `httpd-vhosts.conf`, and
@@ -267,9 +267,9 @@ a virtual host, complete with authentication:
        description "listen for changes to whimsy applications"
        start on dbus SIGNAL=SessionNew
        exec /srv/whimsy/tools/toucher
-       
+
 4. (Optional) Debug your local Whimsy web environment with two scripts:
- 
+
        localhost:port/test.cgi?debug
        localhost:port/racktest
 
@@ -278,24 +278,24 @@ More details about the production Whimsy instance are in [DEPLOYMENT.md](DEPLOYM
 Documentation Standards
 ============
 
-As a collection of semi-independent tools, Whimsy has a number of 
+As a collection of semi-independent tools, Whimsy has a number of
 different ways to document code or functionality for users.
 
-- **RDoc for whimsy/asf module APIs** The Rakefile has an RDoc task that now 
-  processes the lib/whimsy/ directory, which can be run locally, and 
+- **RDoc for whimsy/asf module APIs** The Rakefile has an RDoc task that now
+  processes the lib/whimsy/ directory, which can be run locally, and
   is run automatically on the server into https://whimsy.apache.org/docs/api/
-  
-- **End user instructions** are provided in many tools by defining a 
-  `PAGETITLE` and a `helpblock ->` which are put into a consistent place 
-  on the page for users when using whimsy/asf/themes.  This information 
-  is also parsed to generate a committer-only 
-  [listing of useful Whiimsy tools](https://whimsy.apache.org/committers/tools). 
 
-- **Data dependencies** and the flow of data between different Whimsy 
+- **End user instructions** are provided in many tools by defining a
+  `PAGETITLE` and a `helpblock ->` which are put into a consistent place
+  on the page for users when using whimsy/asf/themes.  This information
+  is also parsed to generate a committer-only
+  [listing of useful Whimsy tools](https://whimsy.apache.org/committers/tools).
+
+- **Data dependencies** and the flow of data between different Whimsy
   processes and other websites are described in [test/dataflow.cgi](https://whimsy.apache.org/test/dataflow.cgi)
 
-- **How-To for whimsy committers** are what you're reading right here 
-  in DEVELOPMENT.md and in DEPLOYMENT.md, CONFIGURE.md, MACOSX.md
+- **How-To for whimsy committers** are what you're reading right here
+  in DEVELOPMENT.md and in DEPLOYMENT.md, CONFIGURE.md, MACOS.md
 
 
 How To / FAQ :question:
@@ -303,7 +303,7 @@ How To / FAQ :question:
 
 ### How To: Create A New Whimsy CGI
 
-The simplest way to create a new standalone tool is copy an existing .cgi. 
+The simplest way to create a new standalone tool is copy an existing .cgi.
 Important things to check:
 
 - chmod 755 is likely needed
@@ -312,31 +312,31 @@ Important things to check:
 
 ### How To: Use New SVN or Git Directories
 
-Some SVN/Git repos/files are checked out via cron jobs regularly for 
-caching and read only access.  Some applications checkout needed files 
-just when running into temp dirs (typically to modify them and commit 
-changes).  If you have trouble using the existing [ASF::SVN classes](lib/whimsy/asf/svn.rb) 
+Some SVN/Git repos/files are checked out via cron jobs regularly for
+caching and read only access.  Some applications checkout needed files
+just when running into temp dirs (typically to modify them and commit
+changes).  If you have trouble using the existing [ASF::SVN classes](lib/whimsy/asf/svn.rb)
 class to access files from Subversion on the server, then check:
 
 - Default SVN checkout mappings: [repository.yml](repository.yml)
 
 ### How To: Keep Your Local Environment Updated
 
-`rake update git:pull svn:update` will crawl the tree, updating all 
+`rake update git:pull svn:update` will crawl the tree, updating all
 gems as well as pulling/updating any existing git or svn checkouts that
 you have locally from repository.yml.
 
-Note also that sometimes you may need to `bundle exec *command*` instead 
-of just doing `bundle *command*`, since using the exec uses a subtly 
+Note also that sometimes you may need to `bundle exec *command*` instead
+of just doing `bundle *command*`, since using the exec uses a subtly
 different set of gem versions from the local directory.
 
 ### How To: Authenticate/Authorize Your Scripts
 
-User authentication for any CGI script is provided by the http server's 
-LDAP module, and can be done by by adding the path to the CGI in the 
+User authentication for any CGI script is provided by the http server's
+LDAP module, and can be done by adding the path to the CGI in the
 deployment descriptor for the server under the appropriate `authldap` realm:
 
-https://github.com/apache/infrastructure-puppet/blob/deployment/data/nodes/whimsy-vm4.apache.org.yaml#L127
+https://github.com/apache/infrastructure-p6/blob/production/data/nodes/whimsy-vm7.apache.org.yaml#L251
 
 Note that the LDAP module does not currently handle boolean conditions
 (example: members **or** officers).  The way to handle this is to do
@@ -345,12 +345,12 @@ http server, and verify that the user is a part of the most inclusive group
 (typically: committers).  That is done as above in `authldap`.
 
 The CGI scripts that need to do more specific authorization will need to
-check `ASF::Auth` in their code, and output a "Status: 401 Unauthorized" 
+check `ASF::Auth` in their code, and output a "Status: 401 Unauthorized"
 line if access to the tool is **not** permitted for the user.
 
 ```ruby
-require 'whimsy/asf/rack' # Ensures server auth is passed thru
 require 'whimsy/asf' # Provides ASF::Auth class
+require 'whimsy/asf/rack' # Ensures server auth is passed thru, provides ASF::Auth module
 
 user = ASF::Auth.decode(env = {})
 unless user.asf_member? or ASF.pmc_chairs.include? user
@@ -362,14 +362,15 @@ end
 
 ### How To: Add A New Mailing List-Id
 
-Whimsy can use ASF::Mail to view mailing lists locally by having the 
+Whimsy can use ASF::Mail to view mailing lists locally by having the
 server subscribe to the list.
 
-- Subscribe _listname_@whimsy-_server_vmname_.apache.org to the desired 
+- Subscribe _listname_@whimsy-_server_vmname_.apache.org to the desired
   mailing list (see also [Deployment instructions](DEPLOYMENT.md#manual-steps))
-- Add your _listname_ to the `:apache_mailmap:` entry in [puppet](https://github.com/apache/infrastructure-puppet/blob/deployment/data/nodes/whimsy-vm4.apache.org.yaml#L63)
-- Note that tools/deliver.rb will dump all mail locally (it does not 
-  currently get cleaned out) where it can be used by ASF::Mail 
+- Add your _listname_ to the `:apache_mailmap:` entry 
+  in [puppet](https://github.com/apache/infrastructure-p6/blob/production/data/nodes/whimsy-vm7.apache.org.yaml#L107)
+- Note that tools/deliver.rb will dump all mail locally (it does not
+  currently get cleaned out) where it can be used by ASF::Mail
 
 ### How To: Test Whimsy Library methods
 
@@ -395,7 +396,7 @@ Simple shell scripts can use the following:
     $LOAD_PATH.unshift '/srv/whimsy/lib'
     require 'whimsy/asf'
 
-Adjust the paths above if you have not installed code in the standard place 
+Adjust the paths above if you have not installed code in the standard place
 (or add a link from /srv/whimsy to your copy of the code)
 
 ### How To: Match Email Addresses To Committers
@@ -412,12 +413,12 @@ p person # -> nil or an ASF::Person object
 
 ### How To: Have A CGI Create either HTML or JSON Output
 
-Often times Whimsy CGIs display visualizations of JSON or other structured 
-data that is generated from various other sources.  It's handy to have 
-one script both create the JSON (to checkin to /public, perhaps) as well 
+Often times Whimsy CGIs display visualizations of JSON or other structured
+data that is generated from various other sources.  It's handy to have
+one script both create the JSON (to checkin to /public, perhaps) as well
 as display the data.
 
-One example of this is the [trademark listing script](www/brand/list.cgi), 
+One example of this is the [trademark listing script](www/brand/list.cgi),
 which explicitly checks the query string to determine which output to send.
 
 ```ruby
@@ -434,22 +435,22 @@ _html do
 ...etc.
 ```
 
-Scripts that don't do the query string check can still be forced to have 
+Scripts that don't do the query string check can still be forced to have
 wunderbar return the _json data instead of _html via curl:
 
     curl -i -H "Accept: application/json" -u curcuru https://whimsy.apache.org/members/private-script.cgi
 
-This will prompt for a password interactively, and then cause the 
+This will prompt for a password interactively, and then cause the
 script to return _json to curl.
 
 Whimsy On Windows
 =================
 
 While some tools may work on Microsoft Windows, many don't currently.  
-Alternatives for Windows include a Docker image, a custom Vagrant VM, and a Kitchen/Puppet 
-managed Vagrant VM (as the [live instance](DEPLOYMENT.md) does).  The primary advantage 
-of using an image or a VM is isolation.  The primary disadvantage is that 
-you will need to install your SVN credentials there and arrange to either 
+Alternatives for Windows include a Docker image, a custom Vagrant VM, and a Kitchen/Puppet
+managed Vagrant VM (as the [live instance](DEPLOYMENT.md) does).  The primary advantage
+of using an image or a VM is isolation.  The primary disadvantage is that
+you will need to install your SVN credentials there and arrange to either
 duplicate or mount needed SVN directories.
 
 Further Reading

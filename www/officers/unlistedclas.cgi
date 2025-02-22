@@ -8,8 +8,8 @@ require 'whimsy/asf'
 require 'whimsy/asf/forms'
 require 'whimsy/asf/rack'
 
-user = ASF::Auth.decode(env = {})
-unless user.asf_member? or ASF.pmc_chairs.include? user
+user = ASF::Auth.decode({})
+unless user.asf_chair_or_member?
   print "Status: 401 Unauthorized\r\n"
   print "WWW-Authenticate: Basic realm=\"ASF Members and Officers\"\r\n\r\n"
   exit
@@ -18,12 +18,10 @@ end
 def emit_form(search=nil, value=nil)
   _whimsy_panel('Search for ICLA', style: 'panel-success') do
     _form.form_horizontal method: 'post' do
-      _div.form_group do
-        _label.col_sm_offset_3.col_sm_9.strong.text_left 'Enter search term'
-      end
+      _whimsy_forms_subhead(label: 'Enter search term')
       field = 'search'
       _whimsy_forms_input(label: 'Search for', name: field, id: field,
-        value: search, helptext: 'Enter email address'
+        value: search, helptext: 'Enter email address. Must match the field on the ICLA exactly.'
       )
       if value
         field = 'match'
@@ -31,9 +29,7 @@ def emit_form(search=nil, value=nil)
           value: value
         )
       end
-      _div.col_sm_offset_3.col_sm_9 do
-        _input.btn.btn_default type: 'submit', value: 'Search'
-      end
+      _whimsy_forms_submit(value: 'Search')
     end
   end
 end
@@ -52,7 +48,8 @@ _html do
       },
       helpblock: -> {
         _p %{
-          This script allows officers and members to search for CLAs from prospective committers
+          This script allows officers and members to search for CLAs from prospective committers.
+          You can only search by email address, as names are not unique.
         }
       },
     ) do

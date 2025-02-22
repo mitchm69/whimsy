@@ -53,7 +53,7 @@ class PublishMinutes < Vue
   # autofocus on minute text
   def mounted()
     jQuery('#publish-minutes-form').on 'shown.bs.modal' do
-      document.getElementById("summary-text").focus()
+      document.getElementById('summary-text').focus()
     end
   end
 
@@ -98,7 +98,8 @@ class PublishMinutes < Vue
       Server.drafts = drafts
       jQuery('#publish-minutes-form').modal(:hide)
       document.body.classList.remove('modal-open')
-      window.open('https://cms.apache.org/www/publish', '_blank').focus()
+      # No longer exists
+      # window.open('https://cms.apache.org/www/publish', '_blank').focus()
     end
   end
 end

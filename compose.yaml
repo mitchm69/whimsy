@@ -1,0 +1,13 @@
+services:
+  web: # must agree with Rakefile
+    image: whimsy-web
+    build: .
+    ports:
+      - "1999:1999"
+    environment:
+      - "HOST_HOME=$HOME"
+    volumes:
+      - ..:/srv
+    # Needed to run puppeteer
+    cap_add:
+      - SYS_ADMIN

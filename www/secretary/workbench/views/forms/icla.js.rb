@@ -221,9 +221,9 @@ class ICLA < Vue
     end
 
     # new account request form - perform checks only if user is valid
-    user = document.querySelector("input[name=user]")
-    project = document.querySelector("select[name=project]")
-    votelink = document.querySelector("input[name=votelink]")
+    user = document.querySelector('input[name=user]')
+    project = document.querySelector('select[name=project]')
+    votelink = document.querySelector('input[name=votelink]')
 
     valid &&= project.validity.valid
 
@@ -246,7 +246,7 @@ class ICLA < Vue
 
     # Safari autocomplete workaround: trigger change on leaving field
     # https://github.com/facebook/react/issues/2125
-    if navigator.userAgent.include? "Safari"
+    if navigator.userAgent.include? 'Safari'
       Array(document.getElementsByTagName('input')).each do |input|
         input.addEventListener('blur', self.onblur)
       end
@@ -279,15 +279,15 @@ class ICLA < Vue
 
   # generate file name from the real name
   def genfilename(realname, familyfirst)
-    nominalname = asciize(realname.strip()).downcase().gsub(/\W+/, '-')
+    nominalname = asciize(realname.strip()).downcase()
     if !familyfirst
       return nominalname
     else
       # compute file name with family first; move first name to last
-      namearray = nominalname.split("-")
+      namearray = nominalname.split('-')
       namearray.push(namearray[0])
       namearray.shift()
-      return namearray.join("-")
+      return namearray.join('-')
     end
   end
 

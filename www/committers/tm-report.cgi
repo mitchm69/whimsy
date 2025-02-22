@@ -100,7 +100,7 @@ end
 # Display the form
 def emit_form()
   # Store auth so we know Apache ID of submitter
-  user = ASF::Auth.decode(env = {})
+  user = ASF::Auth.decode({})
   docket = JSON.parse(File.read(File.join(ASF::SVN['brandlist'], 'docket.json'))) # To annotate pmcs with (R) symbol
   committees = Public.getJSON('committee-info.json')['committees']
 
@@ -178,9 +178,7 @@ def emit_form()
       emit_input(label: 'Committer Email of Reporter', name: 'reporteremail', readonly: true,
         value: "#{user.public_name} (whimsy) <#{user.id}@apache.org>", icon: 'glyphicon-user', iconlabel: 'Committer Email')
 
-      _div.col_sm_offset_3.col_sm_9 do
-        _input.btn.btn_default type: 'submit', value: 'Submit Report'
-      end
+      _whimsy_forms_submit(value: 'Submit Report')
     end
   end
 end
@@ -195,8 +193,8 @@ def send_form(formdata: {})
   # Build the mail to be sent
   frm = formdata['reporteremail']
   subject = "[FORM] Misuse Report about #{formdata['project']}"
-  pmc_list = ASF::Committee.find(formdata['project']).mail_list
-  cc_list = ["private@#{pmc_list}.apache.org", frm]
+  pmc_list = ASF::Committee.find(formdata['project']).private_mail_list
+  cc_list = [private_mail_list, frm]
   to_list = BRANDLIST
 
   if true # TESTING mode

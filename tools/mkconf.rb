@@ -22,7 +22,13 @@ conf = <<-EOF + conf
 #
 EOF
 
-conf.sub! 'VirtualHost *:443', 'VirtualHost *:80'
+conf.sub! 'SetEnv HOME /var/www',''"SetEnv HOME /var/www
+
+# to agree with Dockerfile (ensure svn does not complain)
+SetEnv LANG C.UTF-8
+SetEnv LC_ALL C.UTF-8"''
+
+conf.sub! 'VirtualHost *:443', 'VirtualHost *:1999'
 conf.sub! /ServerName whimsy(.*?)\.apache\.org/, 'ServerName whimsy.local'
 
 conf.gsub! 'ServerAlias', '## ServerAlias'
@@ -35,7 +41,7 @@ conf.gsub! /\n\s*PassengerGroup.*/, ''
 
 conf.gsub! /\n\s*SSL.*/, ''
 conf.gsub! /\n\s*## SSL.*/, ''
-conf.gsub! "SetEnv HTTPS", "# SetEnv HTTPS"
+conf.gsub! 'SetEnv HTTPS', '# SetEnv HTTPS'
 
 conf.gsub! '/x1/srv/whimsy', '/srv/whimsy'
 
@@ -46,6 +52,36 @@ conf.sub! /^SetEnv PATH .*/ do |line|
 end
 
 conf.sub! 'wss://', 'ws://'
+
+conf.gsub! /AuthLDAPUrl .*/, 'AuthLDAPUrl "ldaps://<%= ldaphosts %>/ou=people,dc=apache,dc=org?uid"'
+conf.gsub! /AuthLDAPBindDN .*/, 'AuthLDAPBindDN <%= ldapbinddn %>'
+conf.gsub! /AuthLDAPBindPassword .*/, 'AuthLDAPBindPassword "<%= ldapbindpw %>"'
+
+appendix=''"# Needs libapache2-mod-svn to be installed
+# These are separate repos, as per the real ones
+<Location /repos/asf>
+  DAV svn
+  SVNPath /srv/REPO/asf
+  SetOutputFilter DEFLATE
+</Location>
+
+<Location /repos/infra>
+  DAV svn
+  SVNPath /srv/REPO/infra
+  SetOutputFilter DEFLATE
+</Location>
+
+<Location /repos/private>
+  DAV svn
+  SVNPath /srv/REPO/private
+  SetOutputFilter DEFLATE
+</Location>
+
+</VirtualHost>"''
+
+conf.sub! '</VirtualHost>', appendix
+
+conf.gsub! %r{ $}, '' # Trailing spaces
 
 if ARGV.empty?
   puts conf

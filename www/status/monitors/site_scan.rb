@@ -14,24 +14,28 @@ Info - log is recent and contains only expected content
 
 require 'time'
 
-def Monitor.site_scan(previous_status)
+def StatusMonitor.site_scan(previous_status)
   logdir = File.expand_path('../../www/logs')
   logfile = File.join(logdir, 'site-scan')
   log = File.read(logfile)
 
-  log.gsub! /^([-\w]+ )*https?:\S+ \w+\n/, ''
+  # Drop standard cache info
+  log.gsub! /^([-\w]+ )*https?:\S+ (=> \S* )?\w+\n/, ''
+  # Drop other info (must agree with scanner script)
+  log.gsub! %r{^(Started|Ended|Events):.+\n}, '' # drop 'Events: already have'
 
   danger_period = 86_400 # one day
 
   if not log.empty?
     # Archive the log file
     require 'fileutils'
-    archive = File.join(logdir,'archive')
+    archive = File.join(logdir, 'archive')
     FileUtils.mkdir(archive) unless File.directory?(archive)
     file = File.basename(logfile)
-    FileUtils.copy logfile, File.join(archive, file + '.danger'), preserve: true
     level = 'danger'
-    level = 'warning' if log.gsub(/.* error\n/, '').empty?
+    # remove all non-fatal messages
+    level = 'warning' if log.gsub(/(.* error|WARN: timeout scanning.*|Events: already have.*)\n/, '').empty?
+    FileUtils.copy logfile, File.join(archive, file + '.' + level), preserve: true
     {
       level: level,
       data: log.split("\n"),

@@ -10,7 +10,7 @@ require 'mail'
 require 'date'
 
 user = ASF::Auth.decode(env = {})
-unless user.asf_member? or ASF.pmc_chairs.include? user
+unless user.asf_chair_or_member?
   print "Status: 401 Unauthorized\r\n"
   print "WWW-Authenticate: Basic realm=\"ASF Members and Officers\"\r\n\r\n"
   exit
@@ -160,7 +160,8 @@ _html do
                 _div.col_sm_6 do
                   _select.form_control name: "name", id: "name", required: true do
                     _option value: ''
-                    iclas.invert.to_a.sort.each do |name, email|
+                    # ignore case when sorting names
+                    iclas.invert.to_a.sort_by {|n, e| n.upcase}.each do |name, email|
                       _option name, value: name, data_email: email
                     end
                   end
@@ -285,13 +286,12 @@ _html do
                     cc_list = ["operations@apache.org"]
                     requestor = user.id
                   else
-                    pmc_list = ASF::Committee.find(@pmc).mail_list
-                    cc_list = ["private@#{pmc_list}.apache.org"]
+                    cc_list = [ASF::Committee.find(@pmc).private_mail_list]
                     requestor = @pmc[/([\w.-]+)/, 1]
                   end
 
                   if requestor == 'incubator' and not @podling.to_s.empty?
-                    cc_list << "private@#{@podling}.#{pmc_list}.apache.org"
+                    cc_list << ASF::Podling.find(@podling).private_mail_list
                     requestor = "#{@podling}@incubator"
                   end
 
@@ -309,21 +309,24 @@ _html do
 
                   mail.subject "[FORM] Account Request - #{requestor}: #{@name}"
 
-                  mail.body = <<-EOF.gsub(/^ {10}/, '').gsub(/(Vote reference:)?\n\s+\n/, "\n\n")
+                  # N.B. The second gsub below drops the Vote reference paragraph if there is no reference
+                  mail.body = <<-EOF.gsub(/^ {10}/, '').gsub(/(Vote reference:)?\n\s+\n\s+\(This link is.+\)\n/, "\n\n")
                     Prospective userid: #{@user}
                     Full name: #{@name}
                     Forwarding email address: #{@email}
 
                     Vote reference:
                       #{@votelink.to_s.gsub('mail-search.apache.org/pmc/', 'mail-search.apache.org/members/')}
+                      (This link is for internal use, and is not visible to applicants)
 
                     #{@comments}
 
-                    --
+                    --#{' '}
                     Submitted by https://#{ENV['HTTP_HOST']}#{ENV['REQUEST_URI'].split('?').first}
                     From #{`/usr/bin/host #{ENV['REMOTE_ADDR']}`.chomp}
                     Using #{ENV['HTTP_USER_AGENT']}
                   EOF
+                  # the suffix #{' '} above is used to add a trailing space that is visible in code
 
                   msg = "#{@user} account request by #{user.id} for #{requestor}"
                   rc = ASF::SVN.update(ASF::SVN.svnpath!('acreq', 'new-account-reqs.txt'), msg, env, _) do |_dir, input|
