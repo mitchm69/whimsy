@@ -48,7 +48,7 @@ class PPMCCommitters < Vue
                 if pending.length == 2
                   list = "#{pending[0]} and #{pending[1]}"
                 else
-                  list = pending[0..-2].join(', ') + ", and " +  pending[-1]
+                  list = pending[0..-2].join(', ') + ', and ' +  pending[-1]
                 end
 
                 _button.btn.btn_success 'Add all as committers',
@@ -97,10 +97,18 @@ class PPMCCommitter < Vue
         end
       end
 
-      if @@person.member
+      if @@person.member == true # full member
         _td { _b { _a @@person.id, href: "committer/#{@@person.id}"} }
         _td @@person.githubUsername
         _td { _b @@person.name }
+      elsif @@person.member
+        _td { _i { _a @@person.id, href: "committer/#{@@person.id}"} }
+        _td @@person.githubUsername
+        _td { _i @@person.name
+          _ ' ('
+          _ @@person.member.sub(%r{( \(Non-voting\))? Member}, '').sub(%r{^Emeritus}, 'ASF Emeritus')
+          _ ')'
+        }
       else
         _td { _a @@person.id, href: "committer/#{@@person.id}" }
         _td @@person.githubUsername
@@ -113,8 +121,8 @@ class PPMCCommitter < Vue
             _button.btn.btn_primary 'Add as an incubator committer',
               data_action: 'add icommit',
               data_target: '#confirm', data_toggle: 'modal',
-              data_confirmation: "Add #{@@person.name} as a commiter " +
-                "for the incubator PPMC?"
+              data_confirmation: "Add #{@@person.name} as a committer " +
+                'for the incubator PPMC?'
           end
         end
       elsif not @@person.icommit

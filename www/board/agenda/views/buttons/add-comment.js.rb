@@ -35,7 +35,7 @@ class AddComment < Vue
       end
 
       #input field: initials
-      _input.comment_initials! label: 'Initials',
+      _input.comment_initials! label: 'Apache ID',
         placeholder: 'initials', disabled: @disabled,
         value: @@server.pending.initials || @@server.initials
 
@@ -70,7 +70,7 @@ class AddComment < Vue
 
     # autofocus on comment text
     jQuery('#comment-form').on 'shown.bs.modal' do
-      document.getElementById("comment-text").focus()
+      document.getElementById('comment-text').focus()
     end
   end
 
@@ -84,7 +84,7 @@ class AddComment < Vue
     data = {
       agenda: Agenda.file,
       attach: @@item.attach,
-      initials: document.getElementById("comment-initials").value ||
+      initials: document.getElementById('comment-initials').value ||
         User.initials,
       comment: @comment
     }

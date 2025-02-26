@@ -36,7 +36,7 @@ entries = {}
 groups = ASF::AuthGroup.preload # for performance
 
 if groups.empty?
-  Wunderbar.error "No results retrieved, output not created"
+  Wunderbar.error 'No results retrieved, output not created'
   exit 0
 end
 
@@ -68,7 +68,7 @@ info = {
 
 public_json_output(info)
 
-if changed? and @old_file
+if check_now?
   # for validating UIDs
   uids = ASF::Person.list().map(&:id)
   entries.each do |name, entry|

@@ -57,6 +57,7 @@ committees = ASF::Committee.load_committee_info
 info = {
   last_updated: ASF::Committee.svn_change,
   committee_count: committees.size,
+  pmc_count: 0,
   roster_counts: nil
 }
 
@@ -79,6 +80,7 @@ info[:committees] = committees.map {|committee|
     roster: committee.roster.sort.to_h, # sort entries by uid
     pmc: committee.pmc?
   }
+  info[:pmc_count] += 1 if committee.pmc?
   roster_counts[cname] = committee.roster.size
   data[:paragraph] = committee.paragraph if committee.paragraph
   [cname, data]
@@ -104,21 +106,21 @@ public_json_output(info)
 
 # Check if there is an unexpected entry date
 # we only do this if the file has changed to avoid excessive reports
-if changed? and @old_file
+if check_now?
   # Note: symbolize_names=false to avoid symbolising variable keys such as pmc and user names
   # However the current JSON (info) uses symbols for fixed keys - beware!
   previous = JSON.parse(@old_file, :symbolize_names => false)
   previous = previous['committees']
   last_updated = info[:last_updated] # This is a Time instance
   # the joining date should normally be the same as the date when the file was updated:
-  updated_day1 = last_updated.strftime("%Y-%m-%d") # day of update
+  updated_day1 = last_updated.strftime('%Y-%m-%d') # day of update
   # and the date must be after the last time the data was checked.
   # Unfortunately the last_updated field is only updated when the content changes -
   # there is currently no record of when the last check was done.
   # For now, just assume that this is done every 15 mins. This may cause spurious reports
   # if the checks are ever suspended for longer and meanwhile changes occur.
   # Note: for those in an earlier timezone the date could be a few hours earlier
-  updated_day2 = (last_updated - 3600 * 4).strftime("%Y-%m-%d") # day of previous update
+  updated_day2 = (last_updated - 3600 * 4).strftime('%Y-%m-%d') # day of previous update
 
   # for validating UIDs
   uids = ASF::Person.list().map(&:id)
@@ -204,7 +206,7 @@ if ARGV.length >= 2
       end
     else
       unless active.include? key
-        Wunderbar.warn "Has '#{key}'' retired? Could not find it in committee-info.txt!"
+        Wunderbar.warn "Checking committee-info.yml: has '#{key}'' retired? Could not find it in committee-info.txt!"
       end
     end
   end

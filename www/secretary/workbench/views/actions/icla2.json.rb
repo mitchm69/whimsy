@@ -1,7 +1,7 @@
 #
 # File an additional ICLA:
 #  - [optional] move existing ICLA into a directory
-#  - add files to (new) documents/iclas dirctory
+#  - add files to (new) documents/iclas directory
 #  - modify officers/iclas.txt entry
 #  - respond to original email
 #
@@ -11,6 +11,9 @@ message = Mailbox.find(@message)
 
 # find person
 person = ASF::Person.find(@id)
+unless person.icla
+  _warn "Could not find ICLA entry for #{@id}"
+end
 
 # extract file extension
 fileext = File.extname(@selected).downcase
@@ -23,7 +26,7 @@ _personalize_email(env.user)
 ########################################################################
 
 unless @filename =~ /\A\w[-.\w]*\z/
-  _warn "Unexpected characters in @{filename}"
+  _warn 'Unexpected characters in @{filename}'
 end
 
 if @email.strip.end_with? '@apache.org'
@@ -118,7 +121,7 @@ end
 ########################################################################
 
 # insert line into iclas.txt
-task "svn commit foundation/officers/iclas.txt" do
+task 'svn commit foundation/officers/iclas.txt' do
   icla = ASF::ICLA.find_by_id(@id) || ASF::ICLA.find_by_email(@oldemail)
   unless icla and icla.id == @id and icla.email == @oldemail
     raise ArgumentError.new("ICLA not found for #@id:#@oldemail")
@@ -152,27 +155,15 @@ end
 ########################################################################
 
 if person.public_name != @pubname and @id != 'notinavail'
-  task "change public name in LDAP" do
+  task 'change public name in LDAP' do
     form do
       _input value: @pubname, name: 'pubname'
     end
-
     complete do
-      ldap = ASF.init_ldap(true)
+      ASF::LDAP.bind(env.user, env.password) do
+        person.modify('cn',  @pubname.strip)
 
-      ldap.bind("uid=#{env.user},ou=people,dc=apache,dc=org",
-        env.password)
-
-      ldap.modify person.dn, [ASF::Base.mod_replace('cn', @pubname.strip)]
-
-      log = ["LDAP modify: #{ldap.err2string(ldap.err)} (#{ldap.err})"]
-      if ldap.err == 0
-        _transcript log
-      else
-        _backtrace log
       end
-
-      ldap.unbind
     end
   end
 end
@@ -182,7 +173,7 @@ end
 ########################################################################
 
 # send confirmation email
-task "email #@email" do
+task "email #{@email}" do
   cc = person.all_mail.map {|email| "#{@pubname.inspect} <#{email}>"}
   cc << 'secretary@apache.org'
 
@@ -211,27 +202,15 @@ end
 ########################################################################
 
 if @id != 'notinavail'
-  task "change email address in LDAP" do
+  task 'change email address in LDAP' do
     form do
       _input value: @email, name: 'email'
     end
 
     complete do
-      ldap = ASF.init_ldap(true)
-
-      ldap.bind("uid=#{env.user},ou=people,dc=apache,dc=org",
-                env.password)
-
-      ldap.modify person.dn, [ASF::Base.mod_replace('mail', @email.strip)]
-
-      log = ["LDAP modify: #{ldap.err2string(ldap.err)} (#{ldap.err})"]
-      if ldap.err == 0
-        _transcript log
-      else
-        _backtrace log
+      ASF::LDAP.bind(env.user, env.password) do
+        person.modify('mail',  @email.strip)
       end
-
-      ldap.unbind
     end
   end
 end

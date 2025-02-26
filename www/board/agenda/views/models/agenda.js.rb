@@ -12,6 +12,10 @@ class Agenda
   Vue.util.defineReactive @@approved, '?'
   @@color = 'blank'
 
+  def self.banner
+    @@banner
+  end
+
   # (re)-load an agenda, creating instances for each item, and linking
   # each instance to their next and previous items.
   def self.load(list, digest)
@@ -20,6 +24,8 @@ class Agenda
     @@digest = digest
     @@index = []
     prev = nil
+
+    @@banner = list.first.banner
 
     list.each do |item|
       item = Agenda.new(item)
@@ -32,7 +38,7 @@ class Agenda
     # remove president attachments from the normal flow
     @@index.each do |pres|
       match = (pres.title == 'President' and pres.text and pres.text.
-        match(/Additionally, please see Attachments (\d) through (\d)/))
+        match(/Additionally, please see Attachments (\d) through (\d\d?)\./))
       next unless match
 
       # find first and last president report; update shepherd along the way

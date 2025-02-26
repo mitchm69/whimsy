@@ -1,3 +1,5 @@
+require 'whimsy/asf/status'
+
 #
 # Display the list of parts for a given message
 #
@@ -6,9 +8,20 @@ _html do
   _link rel: 'stylesheet', type: 'text/css',
     href: "../../secmail.css?#{@cssmtime}"
 
+  banner = Status.banner
+
   _header_ do
     _h3.bg_success do
       _a 'ASF Secretary Mail', href: '../..', target: '_parent'
+      if banner
+        if banner[:href]
+          _span.small do
+            _a banner[:msg], href: banner[:href]
+          end
+        else
+          _span.small banner[:msg]
+        end
+      end
     end
   end
 
@@ -78,8 +91,12 @@ _html do
         href: 'https://id.apache.org/info/MailAlias.txt'
     end
     _li do
-      _a 'Member list', target: 'content',
+      _a 'Member list (members.txt)', target: 'content',
         href: ASF::SVN.svnpath!('foundation', 'members.txt')
+    end
+    _li do
+      _a 'Foundation commits', target: 'content',
+        href: 'https://lists.apache.org/list?foundation-commits@apache.org'
     end
     _li do
       _a 'How to use this tool', href: '../../HOWTO.html',
@@ -92,7 +109,7 @@ _html do
   end
 
   _script src: "../../app.js?#{@appmtime}"
-  _.render '#parts' do
+  _.render '#parts', timeout: 1 do
     _Parts attachments: @attachments, headers: @headers, projects: @projects,
       meeting: @meeting
   end

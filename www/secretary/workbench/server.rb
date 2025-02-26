@@ -13,6 +13,7 @@ require 'uri'
 require 'sanitize'
 require 'escape'
 require 'time' # for iso8601
+require 'whimsy/asf/meeting-util'
 
 require_relative 'personalize'
 require_relative 'helpers'
@@ -48,22 +49,31 @@ ASF::Mail.configure
 
 SECS_TO_DAYS = 60*60*24
 
-set :show_exceptions, true
 
 disable :logging # suppress log of requests to stderr/error.log
 
 require 'whimsy/asf/status'
-UNAVAILABLE = Status.updates_disallowed_reason # are updates disallowed?
+
+error do
+  err = env['sinatra.error']
+  <<~EOD
+  <pre>
+  Error detected, please see web server error log for full details:
+
+  #{Time.now.gmtime.to_s}: #{err.detailed_message}
+  </pre>
+  EOD
+end
 
 # list of messages
 get '/' do
   redirect to('/') if env['REQUEST_URI'] == env['SCRIPT_NAME']
 
   # determine latest month for which there are messages
-  archives = Dir[File.join(ARCHIVE, '*.yml')].select {|name| name =~ %r{/\d{6}\.yml$}}
+  current = Date.today.strftime('%Y%m') # exclude future-dated entries
+  archives = Dir[File.join(ARCHIVE, '*.yml')].select {|name| name =~ %r{/\d{6}\.yml$} && File.basename(name,'.yml') <= current}
   @mbox = archives.empty? ? nil : File.basename(archives.max, '.yml')
   if @mbox
-    @mbox = [Date.today.strftime('%Y%m'), @mbox].min
     @messages = Mailbox.new(@mbox).client_headers.select do |message|
       message[:status] != :deleted
     end
@@ -79,9 +89,25 @@ get '/' do
       date: Time.at(epoch.to_i).gmtime.asctime,
       time: Time.at(epoch.to_i).gmtime.iso8601,
       href: "/roster/committer/#{id}",
+      href2: ASF::SVN.svnpath!('emeritus-requests-received', file),
       from: ASF::Person.find(id).cn,
       subject: "Pending emeritus request - #{days} days old",
       status: days < 10.0 ? :emeritusPending : :emeritusReady
+    }
+  end
+
+  # Show outstanding withdrawal requests
+  ASF::WithdrawalRequestFiles.listnames(true, env).each do |epoch, file|
+    days = (((Time.now.to_i - epoch.to_i).to_f / SECS_TO_DAYS)).round(1)
+    id = File.basename(file, '.*')
+    @messages << {
+      date: Time.at(epoch.to_i).gmtime.asctime,
+      time: Time.at(epoch.to_i).gmtime.iso8601,
+      href: "/roster/committer/#{id}",
+      href2: ASF::SVN.svnpath!('withdrawn-pending', file),
+      from: ASF::Person.find(id).cn,
+      subject: "Pending withdrawal request - #{days} days old",
+      status: days < 10.0 ? :withdrawalPending : :withdrawalReady
     }
   end
 
@@ -101,13 +127,50 @@ get %r{/(\d{6})} do |mbox|
   _json :index # This invokes workbench/views/index.json.rb
 end
 
+get '/deleted' do
+  current = Mailbox.allmailboxes.last
+  return [404, 'Not found'] unless current
+  redirect to("/#{current}/deleted")
+end
+
 # display deleted messages
 get %r{/(\d{6})/deleted} do |mbox|
   @mbox = mbox
-  @messages = Mailbox.new(@mbox).client_headers.select do |message|
+  @prv, @nxt = Mailbox.prev_next(mbox)
+  @messages = Mailbox.new(@mbox).client_headers(listall: true).select do |message|
     message[:status] == :deleted
   end
   _html :deleted
+end
+
+get '/pending' do
+  current = Mailbox.allmailboxes.last
+  return [404, 'Not found'] unless current
+  redirect to("/#{current}/pending")
+end
+
+# display pending messages
+get %r{/(\d{6})/pending} do |mbox|
+  @mbox = mbox
+  @prv, @nxt = Mailbox.prev_next(mbox)
+  @messages = Mailbox.new(@mbox).client_headers.reject do |message|
+    message[:status] == :deleted
+  end
+  _html :pending
+end
+
+get '/all' do
+  current = Mailbox.allmailboxes.last
+  return [404, 'Not found'] unless current
+  redirect to("/#{current}/all")
+end
+
+# display all messages
+get %r{/(\d{6})/all} do |mbox|
+  @mbox = mbox
+  @prv, @nxt = Mailbox.prev_next(mbox)
+  @messages = Mailbox.new(@mbox).client_headers(listall: true)
+  _html :all
 end
 
 # retrieve a single message
@@ -119,7 +182,8 @@ end
 
 # task lists
 post '/tasklist/:file' do
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   @jsmtime = File.mtime('public/tasklist.js').to_i
   @cssmtime = File.mtime('public/secmail.css').to_i
@@ -135,14 +199,16 @@ end
 # posted actions
 SAFE_ACTIONS = %w[check-mail check-signature]
 post '/actions/:file' do
-  return [503, UNAVAILABLE] if UNAVAILABLE && !SAFE_ACTIONS.include?(params[:file])
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable && !SAFE_ACTIONS.include?(params[:file])
 
   _json :"actions/#{params[:file]}"
 end
 
 # mark a single message as deleted
 delete %r{/(\d+)/(\w+)/} do |month, hash|
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   success = false
 
@@ -159,13 +225,21 @@ end
 
 # update a single message
 patch %r{/(\d{6})/(\w+)/} do |month, hash|
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   success = false
 
   Mailbox.update(month) do |headers|
     if headers[hash]
       updates = JSON.parse(request.env['rack.input'].read)
+      # undelete attachments if requested
+      attStatus = updates.delete('attachment_status')
+      if attStatus
+        headers[hash][:attachments]&.each do |att|
+          att[:status] = nil
+        end
+      end
 
       # special processing for entries with symbols as keys
       headers[hash].each do |key, value|
@@ -186,7 +260,7 @@ end
 # list of parts for a single message
 get %r{/(\d{6})/(\w+)/_index_} do |month, hash|
   message = Mailbox.new(month).find(hash)
-  pass unless message
+  return [404, 'Message Not Found'] unless message
   @attachments = message.attachments
   @headers = message.headers.dup
   @headers.delete :attachments
@@ -194,11 +268,11 @@ get %r{/(\d{6})/(\w+)/_index_} do |month, hash|
   @appmtime = Wunderbar::Asset.convert(File.join(settings.views, 'app.js.rb')).mtime.to_i
   @projects = (ASF::Podling.current+ASF::Committee.pmcs).map(&:name).sort
 
-  # Section 4.1 of the ASF bylaws provides requirements for when membership
-  # applications can be accepted.  Two days are added to cover the adjournment
-  # period of the meeting during which the vote takes place.
-  received = Dir["#{ASF::SVN['Meetings']}/2*/memapp-received.txt"].max
-  @meeting = Date.today - Date.parse(received[/\d{8}/]) <= 32 rescue true # rescue crash in local testing
+  # Check if applications closed; if so, check it application was received in time
+  # Default to 'now' if envelope date not found; hopefully won't be triggered as emails
+  # should now all have the field set up
+  @meeting = ASF::MeetingUtil.applications_valid ||
+    ASF::MeetingUtil.application_valid?(@headers[:envelope_date] || DateTime.now.iso8601)
 
   _html :parts
 end
@@ -206,9 +280,9 @@ end
 # message body for a single message
 get %r{/(\d{6})/(\w+)/_body_} do |month, hash|
   @message = Mailbox.new(month).find(hash)
+  return [404, 'Message Not Found'] unless @message
   @cssmtime = File.mtime('public/secmail.css').to_i
   @appmtime = Wunderbar::Asset.convert(File.join(settings.views, 'app.js.rb')).mtime.to_i
-  pass unless @message
   _html :body
 end
 
@@ -228,6 +302,9 @@ end
 
 # reparse an existing message
 get %r{/(\d{6})/(\w+)/_reparse_} do |month, hash|
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
+
   mailbox = Mailbox.new(month)
   message = mailbox.find(hash)
   pass unless message
@@ -287,21 +364,17 @@ get '/iclas.json' do
   list.to_json
 end
 
-# return a list of members
+# Return official list of members (not using LDAP)
+# includes inactive members
 get '/members.json' do
-  list = []
-  ASF.members.each do |member|
-    list << {
-        id: member.name,
-        name: member.public_name
-    }
-  end
+  list = ASF::Member.list.map { |k, v| {id: k, name: v[:name]}}
   _json list
 end
 
 # redirect to an icla
 get %r{/icla/(.*)} do |filename|
   checkout = ASF::SVN.svnurl('iclas')
+  ASF::ICLAFiles.update_cache(env)
   file = ASF::ICLAFiles.match_claRef(filename)
   pass unless file
   redirect to(checkout + '/' + file)

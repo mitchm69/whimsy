@@ -3,13 +3,6 @@
 # Please use the ASF::SVN and ASF::Git APIs instead
 #
 ---
-:git:
-
-  # For ruby2js demo only (see www/ruby2js.cgi)
-  ruby2js:
-    url: https://github.com/rubys/ruby2js.git
-    depth: 1
-
 # N.B. the names in the section below should not be changed as they are used by Ruby
 # Entries that are not intended to have local workspaces are indicated by: 'depth: skip'
 # Such entries are for url lookup only, e.g. Bills
@@ -25,7 +18,7 @@
   Bills:
     url: private/financials/Bills
     depth: skip
-    
+
 
   Meetings:
     url: private/foundation/Meetings
@@ -39,12 +32,6 @@
     depth: empty
     files:
       - apacheconhistory.csv
-
-  apmail_bin:
-    url: infra/infrastructure/apmail/trunk/bin
-    depth: empty
-    files:
-      - mail_list_autosub.yml
 
   attic-xdocs:
     url: asf/attic/site/xdocs/projects
@@ -69,8 +56,11 @@
     url: private/documents/cclas
     depth: skip
 
-  comdev-foundation: # only want projects.json?
+  comdev-foundation:
     url: asf/comdev/projects.apache.org/trunk/site/json/foundation
+    depth: empty
+    files:
+      - projects.json
 
   comdevtalks:
     url: asf/comdev/site/trunk/content/speakers/talks
@@ -83,21 +73,6 @@
   conflict-of-interest:
     url: private/documents/conflict-of-interest
     depth: skip
-
-  distrel:
-    url: https://dist.apache.org/repos/dist/release
-    depth: delete
-    list: true
-
-  distrelinc:
-    url: https://dist.apache.org/repos/dist/release/incubator
-    depth: delete
-    list: true
-
-  distdevinc:
-    url: https://dist.apache.org/repos/dist/dev/incubator
-    depth: delete
-    list: true
 
   emeritus:
     url: private/documents/emeritus
@@ -157,10 +132,10 @@
     url: asf/incubator/public/trunk/content/podlings
     depth: files
 
+  # for Secretary use only
   member_apps:
     url: private/documents/member_apps
-    depth: delete
-    list: true
+    depth: skip
 
   minutes:
     url: asf/infrastructure/site/trunk/content/foundation/records/minutes
@@ -185,13 +160,10 @@
     url: private/foundation/officers/personnel-duties
     depth: files
 
-# for access to badrcptto files:
-  qmail_control:
-    url: infra/infrastructure/trunk/qmail/control
-    depth: empty
-    files:
-      - badrcptto
-      - badrcptto_patterns
+  # for Treasurer access to financial records
+  records:
+    url: asf/infrastructure/site/trunk/content/foundation/records
+    depth: skip
 
   site-board: # calendar.md(text) only; N.B. this is fetched during web-site build
     url: asf/infrastructure/site/trunk/content/foundation/board
@@ -211,3 +183,11 @@
 
   tlpreq-input:
     url: infra/infrastructure/trunk/tlpreq/input
+
+  withdrawn:
+    url: private/documents/withdrawn
+    depth: skip
+
+  withdrawn-pending:
+    url: private/documents/withdrawn/pending
+    depth: skip

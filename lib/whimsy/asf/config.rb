@@ -45,7 +45,7 @@ module ASF
     root_config = "#{@root}/.whimsy"
     if File.exist? root_config
       @config.merge! YAML.load_file(root_config) || {}
-      @root = '/srv' unless Dir.exist? File.join(@root, "whimsy")
+      @root = '/srv' unless Dir.exist? File.join(@root, 'whimsy')
     end
 
     # capture root
@@ -64,6 +64,12 @@ module ASF
     @config[:svn] ||= "#{@root}/svn/*"
     @config[:git] ||= "#{@root}/git/*"
 
+    # default location of LDAP credentials
+    @config[:ldap_creds] ||= '/srv/ldap.txt'
+
+    # default location of Puppet data
+    @config[:puppet_data] ||= '/srv/puppet-data'
+
     # The cache is used for local copies of SVN files that may be updated by Whimsy
     # for example: podlings.xml
     # www/roster/views/actions/ppmc.json.rb (write)
@@ -72,8 +78,7 @@ module ASF
     @config[:cache] ||= "#{@root}/cache"
 
     # Contains the data files from the ezmlm mail server, e.g.
-    # list-subs - subscriptions
-    # list-mods - moderators
+    # cache/ directory tree
     # The above are used by mlist.rb
     # list-flags - flags domain listname
     # The above are used by mail.rb
@@ -133,6 +138,15 @@ module ASF
       raise RuntimeError "Invalid path: #{path}" unless path.end_with? '/*'
 
       @config[:svn] = path
+    end
+
+    #  Get an executable path override
+    # e.g.
+    # :exepaths:
+    #   gpg: /usr/local/bin/gpg3
+    # returns its input if no override is found
+    def self.getexepath(name)
+      @config[:exepaths]&.fetch(name, name) || name
     end
   end
 

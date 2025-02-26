@@ -29,7 +29,7 @@
 #
 
 # Note: custom ASF LDAP attributes are defined in the file:
-# https://github.com/apache/infrastructure-puppet/blob/deployment/modules/ldapserver/files/asf-custom.schema
+# https://github.com/apache/infrastructure-p6/blob/production/modules/ldapserver/files/asf-custom.schema
 
 require 'wunderbar'
 require 'ldap'
@@ -39,28 +39,23 @@ require 'base64'
 require 'securerandom'
 require 'set'
 
+if __FILE__ == $0
+  $LOAD_PATH.unshift '/srv/whimsy/lib'
+  require 'whimsy/asf/config'
+end
+
 module ASF
   @@weakrefs = Set.new
 
   module LDAP
-     # see https://s.apache.org/IWu8
-     # Previously derived from the following sources:
-     # * https://github.com/apache/infrastructure-puppet/blob/deployment/data/common.yaml (ldapserver::slapd_peers)
-     # Updated 2018-02-24
-    RO_HOSTS = %w(
-      ldaps://ldap-us-ro.apache.org:636
-      ldaps://ldap-eu-ro.apache.org:636
-    )
-
-    RW_HOSTS = %w(
-      ldaps://ldap-master.apache.org:636
-    )
-
     # Mutex preventing simultaneous connections to LDAP from a single process
     CONNECT_LOCK = Mutex.new
 
+    LDAP_CREDS = ASF::Config.get(:ldap_creds)
+    LDAP_MISC = '/usr/local/etc/asfldapmisc.yml'
+
     # connect to LDAP
-    def self.connect(test = true, hosts = nil)
+    def self.connect(hosts = nil)
       # If the host list is specified, use that as is
       # otherwise ensure we start with the next in the default list
       hosts ||= self.hosts.rotate!
@@ -79,21 +74,18 @@ module ASF
             ldap = ::LDAP::Conn.new(uri.host, uri.port)
           end
 
-          # test the connection
-          ldap.bind if test
-
           # save the host
           @host = host
 
           return ldap
         rescue ::LDAP::ResultError => re
           Wunderbar.warn "[#{host}] - Error connecting to LDAP server: " +
-            re.message + " (continuing)"
+            re.message + ' (continuing)'
         end
 
       end
 
-      Wunderbar.error "Failed to connect to any LDAP host"
+      Wunderbar.error 'Failed to connect to any LDAP host'
       return nil
     end
 
@@ -113,16 +105,31 @@ module ASF
       end
 
       dn = ASF::Person.new(user).dn
-      raise ::LDAP::ResultError.new('Unknown user') unless dn
 
-      ASF.ldap.unbind if ASF.ldap.bound? rescue nil
-      ldap = ASF.init_ldap(true, self.rwhosts)
-      if block
-        ASF.flush_weakrefs
-        ldap.bind(dn, password, &block)
-        ASF.init_ldap(true)
-      else
-        ldap.bind(dn, password)
+      begin
+        @ldap.unbind if @ldap&.bound?
+      rescue StandardError
+        # ignore
+      end
+      self.rwhosts.each do |rwhost|
+        begin
+          ldap = ASF._init_ldap(true, [rwhost])
+          Wunderbar.debug("#{ldap.object_id}: bind as #{dn} as #{ldap}")
+          if block
+            ASF.flush_weakrefs
+            ldap.bind(dn, password, &block)
+            ASF._init_ldap(true)
+          else
+            ldap.bind(dn, password)
+          end
+          break
+        rescue ::LDAP::ResultError => e
+          if e.message == "Can't contact LDAP server" # Any others worth a retry?
+            Wunderbar.warn "#{rwhost}: #{e.inspect}, continuing"
+          else
+            raise
+          end
+        end
       end
     ensure
       ASF.flush_weakrefs
@@ -152,19 +159,39 @@ module ASF
       @host
     end
 
-    # allow override of RW_HOSTS by :ldaprw or :ldap config
+    # allow override of writable host by :ldaprw
     def self.rwhosts
       return @rwhosts if @rwhosts # cache the rwhosts list
-      rwhosts = Array(ASF::Config.get(:ldaprw))
-      rwhosts = Array(ASF::Config.get(:ldap)) if rwhosts.empty?
-      rwhosts = RW_HOSTS if rwhosts.empty?
-      @rwhosts =  rwhosts
+      rwhosts = Array(ASF::Config.get(:ldaprw)) # allow separate override for RW LDAP
+      if rwhosts.empty?
+        if File.exist? LDAP_MISC
+          begin
+            ldap_misc = YAML.safe_load(File.read(LDAP_MISC))
+            rwhosts = Array(ldap_misc['ldapclient_asf']['write_uri'])
+          rescue StandardError => e
+            Wunderbar.warn "Could not parse write_uri: #{e.inspect}"
+          end
+        else
+          Wunderbar.warn "Could not find #{LDAP_MISC}"
+        end
+        if rwhosts.empty? # default to RO hosts
+          rwhosts = hosts
+          Wunderbar.debug 'Using rwhosts from hosts'
+        else
+          Wunderbar.debug 'Using rwhosts from LDAP_MISC'
+        end
+      else
+        Wunderbar.debug 'Using rwhosts from Whimsy config'
+      end
+      raise 'Cannot determine writable LDAP URI from ldap.conf or local config!' if rwhosts.empty?
+      @rwhosts = rwhosts
     end
 
     # determine what LDAP hosts are available
+    # use_config=false is needed for the configure method only
     def self.hosts(use_config = true)
       return @hosts if @hosts # cache the hosts list
-      # try whimsy config
+      # try whimsy config (overrides ldap.conf)
       hosts = Array(ASF::Config.get(:ldap))
 
       # check system configuration
@@ -172,16 +199,15 @@ module ASF
         conf = "#{ETCLDAP}/ldap.conf"
         if File.exist? conf
           uris = File.read(conf)[/^uri\s+(.*)/i, 1].to_s
-          hosts = uris.scan(/ldaps?:\/\/\S+?:\d+/)
-          Wunderbar.debug "Using hosts from LDAP config"
+          hosts = uris.scan(%r{ldaps?://\S+}) # May not have a port
+          Wunderbar.debug 'Using hosts from LDAP config'
         end
       else
-        Wunderbar.debug "Using hosts from Whimsy config"
+        Wunderbar.debug 'Using hosts from Whimsy config'
       end
 
-      # if all else fails, use default list
-      Wunderbar.debug "Using default host list" if hosts.empty?
-      hosts = ASF::LDAP::RO_HOSTS if hosts.empty?
+      # There is no default
+      raise 'Cannot determine LDAP URI from ldap.conf or local config!' if hosts.empty?
 
       hosts.shuffle!
       # Wunderbar.debug "Hosts:\n#{hosts.join(' ')}"
@@ -192,9 +218,10 @@ module ASF
     # returns the last certificate found (WHIMSY-368)
     def self.extract_cert(host=nil)
       host ||= hosts.sample[%r{//(.*?)(/|$)}, 1]
-      puts ['openssl', 's_client', '-connect', host, '-showcerts'].join(' ')
-      out, _, _ = Open3.capture3 'openssl', 's_client',
-        '-connect', host, '-showcerts'
+      host += ':636' unless host =~ %r{:\d+\z}
+      cmd = ['openssl', 's_client', '-connect', host, '-showcerts']
+      puts cmd.join(' ')
+      out, _, _ = Open3.capture3(*cmd)
       out.scan(/^-+BEGIN.*?\n-+END[^\n]+\n/m).last
     end
 
@@ -232,7 +259,7 @@ module ASF
         content += "base dc=apache,dc=org\n"
       end
 
-      # ensure TLS_REQCERT is allow (Mac OS/X only)
+      # ensure TLS_REQCERT is allow (macOS only)
       if ETCLDAP.include? 'openldap' and not content.include? 'REQCERT allow'
         content.gsub!(/^TLS_REQCERT/i, '# TLS_REQCERT')
         content += "TLS_REQCERT allow\n"
@@ -242,9 +269,9 @@ module ASF
       File.write(ldap_conf, content) unless content == File.read(ldap_conf)
     end
 
-    # determine if ldap has been configured atleast once
+    # determine if ldap has been configured at least once
     def self.configured?
-      return File.read("#{ETCLDAP}/ldap.conf").include? "asf-ldap-client.pem"
+      return File.read("#{ETCLDAP}/ldap.conf").include? 'asf-ldap-client.pem'
     end
 
     # modify an entry in LDAP; dump information on LDAP errors
@@ -274,24 +301,38 @@ module ASF
     end
   end
 
-  # public entry point for establishing a connection safely
-  def self.init_ldap(reset = false, hosts = nil)
+  # private entry point for establishing a connection safely
+  def self._init_ldap(reset = false, hosts = nil)
     ASF::LDAP::CONNECT_LOCK.synchronize do
+      # fetch the default LDAP connection details
+      if @ldap_dn.nil? || @ldap_pw.nil?
+        Wunderbar.info("Reading #{ASF::LDAP::LDAP_CREDS}")
+        File.open(ASF::LDAP::LDAP_CREDS) do |io|
+          @ldap_dn = io.readline.strip
+          @ldap_pw = io.readline.strip
+        end
+      end
       @ldap = nil if reset
-      @ldap ||= ASF::LDAP.connect(!reset, hosts)
+      @ldap ||= ASF::LDAP.connect(hosts)
     end
   end
 
   # Directory where ldap.conf resides.  Differs based on operating system.
   ETCLDAP = case
     when Dir.exist?('/etc/openldap') then '/etc/openldap'
-    when Dir.exist?('/usr/local/etc/openldap') then '/user/local//etc/openldap'
+    when Dir.exist?('/usr/local/etc/openldap') then '/user/local/etc/openldap'
     else '/etc/ldap'
   end
 
-  # Returns existing LDAP connection, creating one if necessary.
+  # Returns LDAP connection, creating and binding one if necessary.
   def self.ldap
-    @ldap || self.init_ldap
+    @ldap || ASF._init_ldap
+    # ensure the connection is bound
+    unless @ldap.bound?
+      Wunderbar.debug("#{@ldap.object_id}: bind as #{@ldap_dn} as #{@ldap}")
+      @ldap.bind(@ldap_dn, @ldap_pw)
+    end
+    @ldap
   end
 
   # search with a scope of one, with automatic retry/failover
@@ -314,9 +355,10 @@ module ASF
 
     # try once per host, with a minimum of two tries
     attempts_left = [ASF::LDAP.hosts.length, 2].max
+    target = nil # ensure access from rescue block
     begin
       attempts_left -= 1
-      init_ldap unless @ldap
+      ASF.ldap # creates connection if necessary and binds it
       return [] unless @ldap
 
       target = @ldap.get_option(::LDAP::LDAP_OPT_HOST_NAME) rescue '?'
@@ -415,7 +457,7 @@ module ASF
 
   # Superclass for all classes which are backed by LDAP data.  Encapsulates
   # the management of collections to weak references to instance data, for
-  # both performance and funcational reasons.  Sequentially finding the same
+  # both performance and functional reasons.  Sequentially finding the same
   # same object will return the same instance unless the prior instance has
   # been reclaimed by garbage collection.  This often prevents large numbers
   # of requests to fetch the same data from LDAP.
@@ -519,6 +561,14 @@ module ASF
       ASF.search_one(base, "cn=#{name}", 'cn').any?
     end
 
+    # Low-level search for retrieving LDAP entries. Assumes scope ONE
+    # Returns list of hashes, where the keys are the attributes
+    # Optionally provide a list of attributes to return, e.g. ['uid','mail']
+    # Always includes 'dn' in the hashes
+    def self.ldap_search(filter, attributes=['dn'])
+      raise ArgumentError.new "Cannot be used for #{self.name} instances" unless base
+      ASF.search_one(base, filter, [attributes].flatten)
+    end
   end
 
   # a hash of attributes which is not populated until the first attempt
@@ -669,8 +719,8 @@ module ASF
 
     # Obtain a list of people known to LDAP.  LDAP filters may be used
     # to retrieve only a subset.
-    def self.list(filter='uid=*', attributes='uid')
-      ASF.search_one(base, filter, attributes).flatten.map {|uid| find(uid)}
+    def self.list(filter='uid=*')
+      ASF.search_one(base, filter, 'uid').flatten.map {|uid| find(uid)}
     end
 
     # Obtain a list of people (ids) known to LDAP.  LDAP filters may be used
@@ -733,6 +783,12 @@ module ASF
     def self.[](id)
       person = super
       person.attrs['dn'] ? person : nil
+    end
+
+    # override the base version which does not work
+    # as it relies on search by 'cn' == id
+    def hasLDAP?
+      !attrs['dn'].nil?
     end
 
     # list of LDAP attributes for this person, populated lazily upon
@@ -811,9 +867,6 @@ module ASF
     def committees
       # legacy LDAP entries
       committees = []
-#      committees = weakref(:committees) do
-#        Committee.list("member=uid=#{name},#{base}")
-#      end
 
       # add in projects
       # Get list of project names where the person is an owner
@@ -855,7 +908,7 @@ module ASF
     # list of LDAP services that this individual is a member of
     def services
       weakref(:services) do
-        Service.listcns("member=#{dn}")
+        Service.listcns("(|(member=#{dn})(memberUid=#{name}))")
       end
     end
 
@@ -864,19 +917,56 @@ module ASF
       "uid=#{name},#{ASF::Person.base}"
     end
 
-    # Allow arbitrary LDAP attibutes to be referenced as object properties.
+    def self.dn(name)
+      "uid=#{name},#{ASF::Person.base}"
+    end
+
+    VALID_ATTRS = %w[
+      asf-altEmail
+      asf-committer-email
+      asf-member-activeprojects
+      asf-member-status
+      asf-pgpKeyFingerprint
+      asf-sascore
+      cn
+      createTimestamp
+      creatorsName
+      dn
+      entryCSN
+      entryDN
+      entryUUID
+      gidNumber
+      githubUsername
+      hasSubordinates
+      homeDirectory
+      host
+      loginShell
+      mail
+      modifiersName
+      modifyTimestamp
+      objectClass
+      sn
+      sshPublicKey
+      structuralObjectClass
+      subschemaSubentry
+      uid
+      uidNumber
+    ]
+
+    # Allow arbitrary LDAP attributes to be referenced as object properties.
     # Example: <tt>ASF::Person.find('rubys').cn</tt>.  Can also be used
     # to modify an LDAP attribute.
     def method_missing(name, *args)
-      if name.to_s.end_with? '=' and args.length == 1
-        return modify(name.to_s[0..-2], args)
+      sname = name.to_s
+      if sname.end_with? '=' and args.length == 1
+        return modify(name[0..-2], args)
       end
 
       return super unless args.empty?
-      result = self.attrs[name.to_s]
-      return super unless result
+      return super unless VALID_ATTRS.include? sname
+      result = self.attrs[sname]
 
-      if result.empty?
+      if result.nil? || result.empty?
         return nil
       else
         result.map! do |value|
@@ -916,7 +1006,7 @@ module ASF
     # Optionally return several free values as an array
     def self.next_uidNumber(count=1)
       raise ArgumentError.new "Count: #{count} is less than 1!" if count < 1
-      numbers = ASF::search_one(ASF::Person.base, 'uid=*', ['uidNumber', 'gidNumber']).
+      numbers = ASF.search_one(ASF::Person.base, 'uid=*', ['uidNumber', 'gidNumber']).
         map{|i| u=i['uidNumber'];g=i['gidNumber']; u == g ? u : [u,g]}.flatten.map(&:to_i).
         select{|i| i >= MINIMUM_USER_UID}.uniq.sort.lazy
       enum = Enumerator.new do |output|
@@ -976,9 +1066,9 @@ module ASF
 
       # defaults
       attrs['loginShell'] ||= '/bin/bash' # as per asfpy.ldap
-      attrs['homeDirectory'] ||= File.join("/home", availid)
-      attrs['host'] ||= "home.apache.org"
-      attrs['asf-sascore'] ||= "10"
+      attrs['homeDirectory'] ||= File.join('/home', availid)
+      attrs['host'] ||= 'home.apache.org'
+      attrs['asf-sascore'] ||= '10'
 
       # parse name if sn has not been provided (givenName is optional)
       attrs = ASF::Person.ldap_name(attrs['cn']).merge(attrs) unless attrs['sn']
@@ -1014,6 +1104,11 @@ module ASF
       ASF.search_one(base, filter, 'cn').flatten.map {|cn| find(cn)}
     end
 
+    # return a list of groups (cns only), from LDAP.
+    def self.listcns(filter='cn=*')
+      ASF.search_one(base, filter, 'cn').flatten
+    end
+
     # determine if a given ASF::Person is a member of this group
     def include?(person)
       filter = "(&(cn=#{name})(memberUid=#{person.name}))"
@@ -1027,7 +1122,7 @@ module ASF
     # fetch <tt>dn</tt>, <tt>member</tt>, <tt>modifyTimestamp</tt>, and
     # <tt>createTimestamp</tt> for all groups in LDAP.
     def self.preload
-      Hash[ASF.search_one(base, "cn=*", %w(dn memberUid modifyTimestamp createTimestamp)).map do |results|
+      Hash[ASF.search_one(base, 'cn=*', %w(dn memberUid modifyTimestamp createTimestamp)).map do |results|
         cn = results['dn'].first[/^cn=(.*?),/, 1]
         group = ASF::Group.find(cn)
         group.modifyTimestamp = results['modifyTimestamp'].first # it is returned as an array of 1 entry
@@ -1075,8 +1170,9 @@ module ASF
 
     # remove people from an existing group in LDAP
     def remove(people)
+      # Removal fails if the id is not present
       @members = nil  # force fresh LDAP search
-      people = (Array(people) & members).map(&:id)
+      people = Array(people).map(&:id) & memberids
       return if people.empty?
       ASF::LDAP.modify(self.dn, [ASF::Base.mod_delete('memberUid', people)])
     ensure
@@ -1085,8 +1181,9 @@ module ASF
 
     # add people to an existing group in LDAP
     def add(people)
+      # addition fails if the id is present
       @members = nil  # force fresh LDAP search
-      people = (Array(people) - members).map(&:id)
+      people = Array(people).map(&:id) - memberids
       return if people.empty?
       ASF::LDAP.modify(self.dn, [ASF::Base.mod_add('memberUid', people)])
     ensure
@@ -1095,7 +1192,7 @@ module ASF
 
     # add a new group to LDAP
     def self.add(name, people)
-      nextgid = ASF::search_one(ASF::Group.base, 'cn=*', 'gidNumber').
+      nextgid = ASF.search_one(ASF::Group.base, 'cn=*', 'gidNumber').
         flatten.map(&:to_i).max + 1
 
       entry = [
@@ -1140,7 +1237,7 @@ module ASF
     # fetch <tt>dn</tt>, <tt>member</tt>, <tt>modifyTimestamp</tt>, and
     # <tt>createTimestamp</tt> for all projects in LDAP.
     def self.preload
-      Hash[ASF.search_one(base, "cn=*", %w(dn member owner modifyTimestamp createTimestamp)).map do |results|
+      Hash[ASF.search_one(base, 'cn=*', %w(dn member owner modifyTimestamp createTimestamp)).map do |results|
         cn = results['dn'].first[/^cn=(.*?),/, 1]
         project = self.find(cn)
         project.modifyTimestamp = results['modifyTimestamp'].first # it is returned as an array of 1 entry
@@ -1231,6 +1328,7 @@ module ASF
 
     # remove people as owners of a project in LDAP
     def remove_owners(people)
+      # Removal fails if the id is not present
       @owners = nil  # force fresh LDAP search
       removals = (Array(people) & owners).map(&:dn)
       unless removals.empty?
@@ -1242,6 +1340,7 @@ module ASF
 
     # remove people as members of a project in LDAP
     def remove_members(people)
+      # Removal fails if the id is not present
       @members = nil  # force fresh LDAP search
       removals = (Array(people) & members).map(&:dn)
       unless removals.empty?
@@ -1259,6 +1358,7 @@ module ASF
 
     # add people as owners of a project in LDAP
     def add_owners(people)
+      # Addition fails if the id is present
       @owners = nil  # force fresh LDAP search
       additions = (Array(people) - owners).map(&:dn)
       unless additions.empty?
@@ -1270,6 +1370,7 @@ module ASF
 
     # add people as members of a project in LDAP
     def add_members(people)
+      # Addition fails if the id is present
       @members = nil  # force fresh LDAP search
       additions = (Array(people) - members).map(&:dn)
       unless additions.empty?
@@ -1388,13 +1489,14 @@ module ASF
 
     # fetch <tt>dn</tt>, <tt>member</tt>, <tt>modifyTimestamp</tt>, and
     # <tt>createTimestamp</tt> for all services in LDAP.
+    # N.B. some services have memberUid rather than member entries
     def self.preload
-      Hash[ASF.search_one(base, "cn=*", %w(dn member modifyTimestamp createTimestamp)).map do |results|
+      Hash[ASF.search_one(base, 'cn=*', %w(dn member memberUid modifyTimestamp createTimestamp)).map do |results|
         cn = results['dn'].first[/^cn=(.*?),/, 1]
         service = self.find(cn)
         service.modifyTimestamp = results['modifyTimestamp'].first # it is returned as an array of 1 entry
         service.createTimestamp = results['createTimestamp'].first # it is returned as an array of 1 entry
-        members = results['member'] || []
+        members = results['member'] || results['memberUid'].map {|k| ASF::Person.dn(k)} || []
         service.members = members
         [service, members]
       end]
@@ -1413,18 +1515,22 @@ module ASF
     end
 
     # list of members for this service in LDAP
+    # N.B. some services have memberUid rather than member entries
     def members
       members = weakref(:members) do
-        ASF.search_one(base, "cn=#{name}", 'member').flatten
+        results = ASF.search_one(base, "cn=#{name}", ['member', 'memberUid']).first
+        results['member'] || results['memberUid'].map {|k| ASF::Person.dn(k)} || []
       end
 
       members.map {|uid| Person.find uid[/uid=(.*?),/, 1]}
     end
 
     # list of memberids for this service in LDAP
+    # N.B. some services have memberUid rather than member entries
     def memberids
       members = weakref(:members) do
-        ASF.search_one(base, "cn=#{name}", 'member').flatten
+        results = ASF.search_one(base, "cn=#{name}", ['member', 'memberUid']).first
+        results['member'] || results['memberUid'].map {|k| ASF::Person.dn(k)} || []
       end
 
       members.map {|uid| uid[/uid=(.*?),/, 1]}
@@ -1435,6 +1541,7 @@ module ASF
       @members = nil # force fresh LDAP search
       people = (Array(people) & members).map(&:dn)
       return if people.empty?
+      # TODO: how to handle memberUid service groups ?
       ASF::LDAP.modify(self.dn, [ASF::Base.mod_delete('member', people)])
     ensure
       @members = nil
@@ -1445,37 +1552,7 @@ module ASF
       @members = nil # force fresh LDAP search
       people = (Array(people) - members).map(&:dn)
       return if people.empty?
-      ASF::LDAP.modify(self.dn, [ASF::Base.mod_add('member', people)])
-    ensure
-      @members = nil
-    end
-  end
-
-  # <tt>ou=apps</tt> subtree of <tt>ou=groups,dc=apache,dc=org</tt>, currently
-  # only used for <tt>hudson-jobadmin</tt>
-  class AppGroup < Service
-    @base = 'ou=apps,ou=groups,dc=apache,dc=org'
-
-    # return a list of App groups (cns only), from LDAP.
-    def self.listcns(filter='cn=*')
-      # Note that hudson-job-admin is under ou=hudson hence need
-      # to override Service.listcns and use subtree search
-      ASF.search_subtree(base, filter, 'cn').flatten
-    end
-
-    # remove people from an application group.
-    def remove(people)
-      @members = nil
-      people = (Array(people) & members).map(&:dn)
-      ASF::LDAP.modify(self.dn, [ASF::Base.mod_delete('member', people)])
-    ensure
-      @members = nil
-    end
-
-    # add people to an application group.
-    def add(people)
-      @members = nil
-      people = (Array(people) - members).map(&:dn)
+      # TODO: how to handle memberUid service groups ?
       ASF::LDAP.modify(self.dn, [ASF::Base.mod_add('member', people)])
     ensure
       @members = nil
@@ -1497,8 +1574,6 @@ module ASF
 end
 
 if __FILE__ == $0
-  $LOAD_PATH.unshift '/srv/whimsy/lib'
-  require 'whimsy/asf/config'
   mem = ASF.members()
   puts mem.length
   puts mem.first.inspect
@@ -1512,5 +1587,4 @@ if __FILE__ == $0
   puts newids.length
   puts newids.first
   ASF::RoleGroup.listcns.map {|g| puts ASF::RoleGroup.find(g).dn}
-  ASF::AppGroup.listcns.map {|g| puts ASF::AppGroup.find(g).dn}
 end

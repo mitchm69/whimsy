@@ -42,53 +42,6 @@ class MemApp < Vue
 
         _tr do
           _td do
-            _label 'Address', for: 'addr'
-          end
-          _td do
-            _textarea rows: 5, name: 'addr', id: 'addr', disabled: @filed
-          end
-        end
-
-        _tr do
-          _td do
-            _label 'Country', for: 'country'
-          end
-          _td do
-            _input type: :text, name: 'country', id: 'country',
-              disabled: @filed
-          end
-        end
-
-        _tr do
-          _td do
-            _label 'Telephone', for: 'tele'
-          end
-          _td do
-            _input type: :text, name: 'tele', id: 'tele', disabled: @filed
-          end
-        end
-
-        _tr do
-          _td do
-            _label 'Fax', for: 'fax'
-          end
-          _td do
-            _input type: :text, name: 'fax', id: 'fax', disabled: @filed
-          end
-        end
-
-        _tr do
-          _td do
-            _label 'E-Mail', for: 'email'
-          end
-          _td do
-            _input type: :email, name: 'email', id: 'email', value: @email,
-              disabled: @filed
-          end
-        end
-
-        _tr do
-          _td do
             _label 'File Name', for: 'filename'
           end
           _td do
@@ -116,6 +69,9 @@ class MemApp < Vue
     # fetch memapp-received information
     jQuery.getJSON('../../memapp.json') do |result|
       @received = result.received
+      if @received.length == 0
+        alert 'No entries found - has memapp-received.txt been set up yet? (It needs to be populated once the list of elected members is known: see Meetings/runbook.txt)'
+      end
     end
 
     # watch for status updates
@@ -125,7 +81,7 @@ class MemApp < Vue
   # when fullname changes, change filename
   def changeFullName(event)
     @name = event.target.value
-    @filename = asciize(event.target.value).downcase().gsub(/\W+/, '-')
+    @filename = asciize(event.target.value).downcase()
   end
 
   # when id is selected, default full name and filename
@@ -134,7 +90,7 @@ class MemApp < Vue
     @received.each do |line|
       if line.id == id
         @name = line.name
-        @filename = asciize(line.name).downcase().gsub(/\W+/, '-')
+        @filename = asciize(line.name).downcase()
         @disabled = false
 
         if @@headers.from =~ /@apache.org$/

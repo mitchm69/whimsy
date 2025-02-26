@@ -30,7 +30,11 @@ class Person < Vue
 
     # PMCs
     noPMCsub = false
-    pmcs = @committer.pmcs
+    pmcs = @committer.pmcs.slice() # Take copy to avoid affecting original
+    # allow for non-PMC chairs
+    @committer.chairOf.each do |pmcchair|
+      pmcs << pmcchair unless pmcs.include? pmcchair
+    end
     unless pmcs.empty?
       _div.row do
         _div.name 'PMCs'
@@ -41,14 +45,20 @@ class Person < Vue
               if @committer.privateNosub
                 if @committer.privateNosub.include? pmc
                   noPMCsub = true
-                  _b " (*)"
+                  _b ' (*)'
                 end
               end
               if @committer.chairOf.include? pmc
                 _ ' (chair)'
               end
+              unless @committer.pmcs.include?(pmc)
+                _b ' (not on PMC)'
+              end
               unless @committer.committees.include?(pmc)
                 _b ' (not in LDAP committee group)'
+              end
+              unless @committer.committer.include?(pmc)
+                _b ' (not in LDAP committer group)'
               end
             }
           end
@@ -58,8 +68,6 @@ class Person < Vue
               _ '(*) could not find a subscription to the private@ mailing list for this PMC'
               _br
               _ 'Perhaps the subscription address is not listed in the LDAP record'
-              _br
-              _ '(Note that digest subscriptions are not currently included)'
             }
           end
         end
@@ -116,9 +124,9 @@ class Person < Vue
             next if group == 'apldap'
 
             if group == 'committers'
-              _li {_a group, href: "committer/"}
+              _li {_a group, href: 'committer/'}
             elsif group == 'member'
-              _li {_a group, href: "members"}
+              _li {_a group, href: 'members'}
             else
               _li {_a group, href: "group/#{group}"}
             end
@@ -167,7 +175,7 @@ class Person < Vue
           _ 'Some providers are known to block our emails as SPAM.'
           _br
           _ 'Please see the following for details: '
-          _a 'email provider issues', href: '../commiters/emailissues', target: '_blank'
+          _a 'email provider issues', href: '../committers/emailissues', target: '_blank'
           _ ' (opens in new page)'
         end
       end
@@ -193,7 +201,7 @@ class Person < Vue
             _li do
               _a list_name, href: 'https://lists.apache.org/list.html?' +
                 list_name
-              _span " as "
+              _span ' as '
               _span @committer.moderates[list_name].join(', ')
             end
           end
@@ -211,7 +219,7 @@ class Person < Vue
             _li do
               _a list_email[0],
                 href: 'https://lists.apache.org/list.html?' + list_email[0]
-              _span " as "
+              _span ' as '
               _span list_email[1]
             end
           end
@@ -229,7 +237,7 @@ class Person < Vue
             _li do
               _a list_email[0],
                 href: 'https://lists.apache.org/list.html?' + list_email[0]
-              _span " as "
+              _span ' as '
               _span list_email[1]
             end
           end

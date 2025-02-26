@@ -3,14 +3,19 @@
 # data.
 module ASF # :nodoc:
 
-  ASF::Committee.load_committee_metadata
-
   ##
   # Reads and provides access to the
   # <tt>officers/personnel-duties/ROLENAME.yaml</tt> files.
   class OrgChart
     @@duties = {}
     @@desc = {}
+
+    # the file names used to be the same as the role ids, however
+    # these were changed in order to fix public links using the shorter names
+    @@aliases = {
+      'vp-marketing' => 'vp-marketingandpublicity',
+      'infra-admin' => 'infrastructureadministrator',
+    }
 
     # parse any changed YAML role files.
     def self.load
@@ -21,14 +26,15 @@ module ASF # :nodoc:
         data = Hash[*File.read(file).split(/^\[(.*)\]\n/)[1..-1].map(&:strip)]
         next unless data['info']
         data['info'] = YAML.safe_load(data['info'])
+        name = @@aliases[name] || name
         # fix up data items available from elsewhere
         if name =~ %r{^vp-(.+)$} or name =~ %r{^(security)$}
           post = $1
           begin
-            data['info']['id'] = ASF::Committee[post].chairs.first[:id]
+            data['info']['id'] = ASF::Committee[post].chairs.map {|a| a[:id]}
           rescue
             begin
-              data['info']['id'] = ASF::Committee.officers.select{|o| o.name == post}.first.chairs.first[:id]
+              data['info']['id'] = ASF::Committee.officers.select{|o| o.name == post}.first.chairs.map {|a| a[:id]}
             rescue
               Wunderbar.info "Cannot find chair for #{name}"
             end
@@ -36,7 +42,7 @@ module ASF # :nodoc:
         else
           tmp = ASF::Committee.officers.select{|o| o.name == name}.first
           if tmp
-            data['info']['id'] = tmp.chairs.first[:id]
+            data['info']['id'] = tmp.chairs.map {|a| a[:id]}
           else
             Wunderbar.info "Cannot find chair for #{name}"
           end

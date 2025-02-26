@@ -14,6 +14,7 @@ class Parts < Vue
     @project = nil
     @missing_address = false
     @missing_email = false
+    @wrong_email = false
     @corporate_postal = false
     @invalid_public = false
     @separate_signature = false
@@ -22,6 +23,11 @@ class Parts < Vue
     @unreadable_scan = false
     @wrong_identity = false
     @validation_failed = false
+    @signature_not_armored = false
+    @unsigned = false
+    @script_font = false
+    @upload_sig = false
+    @invalid_availid = false
   end
 
   ########################################################################
@@ -43,6 +49,12 @@ class Parts < Vue
         click: self.select
       }
     }
+
+    _ul do
+      _li 'undelete this email', onMousedown: self.undelete_message
+    end
+
+    _p '(Use [ctrl|meta] + [delete|backspace] to delete this email)'
 
     # locate corresponding signature file (if any)
     signature = CheckSignature.find(decodeURIComponent(@selected), @attachments)
@@ -95,7 +107,7 @@ class Parts < Vue
       _li "\u2716 delete", onMousedown: self.delete_attachment
       _li "\u2709 pdf-ize", onMousedown: self.pdfize
       _li.divider
-      _li "parse pdf", onMousedown: self.pdfparse
+      _li 'parse pdf', onMousedown: self.pdfparse
     end
 
     if @selected and not @menu and @selected !~ /\.(asc|sig)$/
@@ -149,12 +161,23 @@ class Parts < Vue
                 onClick: -> {@form = MemApp}
               _span 'membership application'
             end
+          else
+            _label do
+              _input type: 'radio', name: 'doctype', disabled: true
+              _span '(membership application arrived after the closing date)'
+            end
           end
 
           _label do
             _input type: :radio, name: 'doctype', value: 'emeritus-request',
                    onClick: -> {@form = EmeritusRequest}
             _span 'emeritus request'
+          end
+
+          _label do
+            _input type: :radio, name: 'doctype', value: 'withdrawal-request',
+                   onClick: -> {@form = WithdrawalRequest}
+            _span 'withdrawal request'
           end
 
           _hr
@@ -186,6 +209,7 @@ class Parts < Vue
             _input type: 'hidden', name: 'signature', value: @@signature
             _input type: 'hidden', name: 'missing_address', value: @missing_address
             _input type: 'hidden', name: 'missing_email', value: @missing_email
+            _input type: 'hidden', name: 'wrong_email', value: @wrong_email
             _input type: 'hidden', name: 'corporate_postal', value: @corporate_postal
             _input type: 'hidden', name: 'invalid_public', value: @invalid_public
             _input type: 'hidden', name: 'separate_signature', value: @separate_signature
@@ -194,6 +218,13 @@ class Parts < Vue
             _input type: 'hidden', name: 'unreadable_scan', value: @unreadable_scan
             _input type: 'hidden', name: 'wrong_identity', value: @wrong_identity
             _input type: 'hidden', name: 'validation_failed', value: @validation_failed
+            _input type: 'hidden', name: 'signature_not_armored', value: @signature_not_armored
+            _input type: 'hidden', name: 'unsigned', value: @unsigned
+            _input type: 'hidden', name: 'script_font', value: @script_font
+            _input type: 'hidden', name: 'upload_sig', value: @upload_sig
+            _input type: 'hidden', name: 'invalid_availid', value: @invalid_availid
+            # the above entries must agree with the checked: entries below
+            # also any new entries must be added to the backend script incomplete.json.rb
 
             # Defer processing (must be part of POST block)
 
@@ -237,6 +268,13 @@ class Parts < Vue
                   _input type: 'checkbox', checked: @missing_email,
                   onClick: -> {@missing_email = !@missing_email}
                   _span ' missing email address'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @wrong_email,
+                  onClick: -> {@wrong_email = !@wrong_email}
+                  _span ' incorrect email address'
                 end
               end
               _li do
@@ -292,27 +330,52 @@ class Parts < Vue
                 _label do
                   _input type: 'checkbox', checked: @validation_failed,
                   onClick: -> {@validation_failed = !@validation_failed}
-                  _span ' gpg key validation failed'
+                  _span ' gpg signature validation failed'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @signature_not_armored,
+                  onClick: -> {@signature_not_armored = !@signature_not_armored}
+                  _span ' gpg signature not armored'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @unsigned,
+                  onClick: -> {@unsigned = !@unsigned}
+                  _span ' unsigned'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @script_font,
+                  onClick: -> {@script_font = !@script_font}
+                  _span ' script font'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @upload_sig,
+                  onClick: -> {@upload_sig = !@upload_sig}
+                  _span ' upload signature'
+                end
+              end
+              _li do
+                _label do
+                  _input type: 'checkbox', checked: @invalid_availid,
+                  onClick: -> {@invalid_availid = !@invalid_availid}
+                  _span ' invalid availid'
                 end
               end
             end
 
-            _label do
-              _input type: 'radio', name: 'doctype', value: 'unsigned',
-                onClick: self.reject
-              _span 'unsigned form'
-            end
+            # N.B. The checked: variable names must be reflected in the file incomplete.json.jb
 
             _label do
               _input type: 'radio', name: 'doctype', value: 'resubmit',
                 onClick: self.reject
               _span 'resubmitted form'
-            end
-
-            _label do
-              _input type: 'radio', name: 'doctype', value: 'empty',
-                onClick: self.generic_reject
-              _span 'empty form'
             end
 
           end
@@ -332,7 +395,7 @@ class Parts < Vue
           _li "\u2716 delete", onMousedown: self.delete_attachment
           _li "\u2709 pdf-ize", onMousedown: self.pdfize
           _li.divider
-          _li "parse pdf", onMousedown: self.pdfparse
+          _li 'parse pdf', onMousedown: self.pdfparse
         end
 
       elsif @form == :mail
@@ -492,6 +555,31 @@ class Parts < Vue
     }
   end
 
+  # delete a message (keeping attachments)
+  def delete_message(event)
+    @busy = true
+    pathname = window.parent.location.pathname
+    HTTP.delete(pathname).then {
+      window.parent.location.href = '../..'
+    }.catch {|error|
+      alert error
+      @busy = false
+    }
+  end
+
+  # undelete a message
+  def undelete_message(event)
+    @busy = true
+    pathname = window.parent.location.pathname
+    # request removal of :deleted status
+    HTTP.patch(pathname, {status: nil, attachment_status: true}).then {
+      window.parent.location.href = '../..'
+    }.catch {|error|
+      alert error
+      @busy = false
+    }
+  end
+
   # delete an attachment
   def delete_attachment(event)
     data = {
@@ -503,7 +591,8 @@ class Parts < Vue
     HTTP.post('../../actions/delete-attachment', data).then {|response|
       @attachments = response.attachments
       if event.type == 'message'
-        signature = CheckSignature.find(decodeURIComponent(@selected), response.attachments)
+        # we have already deleted the icla, so allow matching a single attachment
+        signature = CheckSignature.find(decodeURIComponent(@selected), response.attachments, 1)
         @busy = false
         @selected = signature
         self.delete_attachment(event) if signature
@@ -539,6 +628,7 @@ class Parts < Vue
       self.hideMenu()
     }
   end
+
 
   # rotate an attachment
   def rotate_attachment(event)
@@ -603,8 +693,8 @@ class Parts < Vue
     event.target.disabled = true
 
     jQuery.ajax(
-      type: "POST",
-      url: "../../actions/update-mail",
+      type: 'POST',
+      url: '../../actions/update-mail',
       data: {
         message: window.parent.location.pathname,
         cc: @cc,
@@ -629,7 +719,7 @@ class Parts < Vue
   # Note: the doctype value is passed across as @doctype
   def generic_reject(event)
     form = jQuery(event.target).closest('form')
-    form.attr('action', "../../tasklist/generic_reject")
+    form.attr('action', '../../tasklist/generic_reject')
     form.submit()
   end
 

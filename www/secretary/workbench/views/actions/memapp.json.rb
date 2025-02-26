@@ -13,14 +13,15 @@ message = Mailbox.find(@message)
 fileext = File.extname(@selected).downcase if @signature.empty?
 
 # verify that a membership form under that name stem doesn't already exist
-if "#@filename#{fileext}" =~ /\A\w[-\w]*\.?\w*\z/ # check taint requirements
+if "#{@filename}#{fileext}" =~ /\A\w[-\w]*\.?\w*\z/ # check taint requirements
   # returns name if it matches as stem or fully (e.g. for directory)
+  ASF::MemApps.update_cache(env)
   form = ASF::MemApps.search @filename
   if form
     _warn "documents/member_apps/#{form} already exists"
   end
 else
-  _warn "Invalid filename or extension"
+  _warn 'Invalid filename or extension'
 end
 
 _warn "Invalid availid #{@availid}" unless @availid =~ /^\w[-.\w]+$/
@@ -38,15 +39,10 @@ _personalize_email(env.user)
 
 # write attachment (+ signature, if present) to the documents/member_apps
 # directory
-task "svn commit documents/member_apps/#@filename#{fileext} and update members.txt" do
+task "svn commit documents/member_apps/#{@filename}#{fileext} and update members.txt" do
   # Construct initial entry:
   fields = {
     fullname: @fullname,
-    address: @addr,
-    country: @country,
-    email: @email,
-    tele: @tele,
-    fax: @fax,
     availid: @availid,
   }
   @entry = ASF::Member.make_entry(fields)
@@ -63,19 +59,20 @@ task "svn commit documents/member_apps/#@filename#{fileext} and update members.t
 
   complete do
 
-    svn_multi('foundation', 'members.txt', 'member_apps', @selected, @signature, @filename, fileext, message, @document) do |members_txt|
+    svn_multi('foundation', 'members.txt', 'member_apps',
+      @selected, @signature, @filename, fileext, message, @document) do |members_txt|
 
-    # update members.txt
-    # TODO this should be a library method
-    pattern = /^Active.*?^=+\n+(.*?)^Emeritus/m
-    data = members_txt.scan(pattern).flatten.first
-    members = data.split(/^\s+\*\)\s+/)
-    members.shift
-    members.push @entry
-    members_txt[pattern,1] = " *) " + members.join("\n *) ")
-    members_txt[/We now number (\d+) active members\./,1] = members.length.to_s
-    ASF::Member.sort(members_txt)
-  end
+      # update members.txt
+      # TODO this should be a library method
+      pattern = /^Active.*?^=+\n+(.*?)^Emeritus/m
+      data = members_txt.scan(pattern).flatten.first
+      members = data.split(/^\s+\*\)\s+/)
+      members.shift
+      members.push @entry
+      members_txt[pattern, 1] = ' *) ' + members.join("\n *) ")
+      members_txt[/We now number (\d+) active members\./, 1] = members.length.to_s
+      ASF::Member.sort(members_txt)
+    end
 
   end
 end
@@ -84,30 +81,18 @@ end
 #             update cn=member,ou=groups,dc=apache,dc=org              #
 ########################################################################
 
-task "update cn=member,ou=groups,dc=apache,dc=org in LDAP" do
+task 'update cn=member,ou=groups,dc=apache,dc=org in LDAP' do
   form do
     _input value: @availid, name: 'availid'
   end
 
   complete do
     if ASF.memberids.include? @availid
-      _transcript ["#@availid already in group member"]
+      _transcript ["#{@availid} already in group member"]
     else
-      ldap = ASF.init_ldap(true)
-      ldap.bind("uid=#{env.user},ou=people,dc=apache,dc=org",
-        env.password)
-
-      ldap.modify "cn=member,ou=groups,dc=apache,dc=org",
-        [LDAP.mod(LDAP::LDAP_MOD_ADD, 'memberUid', [@availid])]
-
-      log = ["LDAP mod add: #{ldap.err2string(ldap.err)} (#{ldap.err})"]
-      if ldap.err == 0
-        _transcript log
-      else
-        _backtrace log
+      ASF::LDAP.bind(env.user, env.password) do
+        ASF::Group['member'].add(ASF::Person.find(@availid))
       end
-
-      ldap.unbind
     end
   end
 end
@@ -116,13 +101,13 @@ end
 #                   subscribe to members@apache.org                    #
 ########################################################################
 
-task "subscribe to members@apache.org" do
+task 'subscribe to members@apache.org' do
   user = ASF::Person.find(@availid)
   vars = {
     version: 3, # This must match committers/subscribe.cgi#FORMAT_NUMBER
     availid: @availid,
-    addr: @email,
-    listkey: 'members',
+    addr: @availid + '@apache.org', # use ASF email here
+    listkey: 'members@apache.org',
     member_p: true,
     chair_p: ASF.pmc_chairs.include?(user),
   }
@@ -145,13 +130,13 @@ end
 #              subscribe to members-notify@apache.org                  #
 ########################################################################
 
-task "subscribe to members-notify@apache.org" do
+task 'subscribe to members-notify@apache.org' do
   user = ASF::Person.find(@availid)
   vars = {
     version: 3, # This must match committers/subscribe.cgi#FORMAT_NUMBER
     availid: @availid,
     addr: @availid + '@apache.org', # use ASF email here
-    listkey: 'members-notify',
+    listkey: 'members-notify@apache.org',
     member_p: true,
     chair_p: ASF.pmc_chairs.include?(user),
   }
@@ -176,17 +161,11 @@ end
 
 # TODO combine with other SVN updates
 
-task "svn commit memapp-received.text" do
-  meetings = ASF::SVN['Meetings']
-  file = Dir["#{meetings}/2*/memapp-received.txt"].max
+task 'svn commit memapp-received.text' do
+  file = ASF::MeetingUtil.get_latest_file('memapp-received.txt')
   received = File.read(file)
-  if received =~ /^no\s+\w+\s+\w+\s+\w+\s+#{@availid}\s/
-    received[/^(no )\s+\w+\s+\w+\s+\w+\s+#{@availid}\s/,1] = 'yes'
-  end
-  received[/(no )\s+\w+\s+\w+\s+#{@availid}\s/,1] = 'yes'
-  received[/(no )\s+\w+\s+#{@availid}\s/,1] = 'yes'
-  received[/(no )\s+#{@availid}\s/,1] = 'yes'
-  @line = received[/.*\s#{@availid}\s.*/]
+  original = received[/.*\s#{@availid}\s.*/]
+  @line = original.gsub('no ','yes')
 
   form do
     _input value: @line, name: 'line'
@@ -196,7 +175,7 @@ task "svn commit memapp-received.text" do
     meeting = file.split('/')[-2]
     path = ASF::SVN.svnpath!('Meetings', meeting,'memapp-received.txt')
     rc = ASF::SVN.update(path, @document, env, _, {diff: true}) do |_tmpdir, input|
-      input[/.*\s#{@availid}\s.*/] = @line
+      input.sub!(original, @line)
       input
     end
     raise RuntimeError.new("exit code: #{rc}") if rc != 0

@@ -4,16 +4,23 @@ $LOAD_PATH.unshift lib unless $LOAD_PATH.include? lib
 
 # Remove world writable directories that Travis may insert into the PATH,
 # as these cause security errors during testing
-ENV['PATH'] = ENV['PATH'].split(File::PATH_SEPARATOR).
-  reject {|path| File.world_writable? path}.join(File::PATH_SEPARATOR)
+# ENV['PATH'] = ENV['PATH'].split(File::PATH_SEPARATOR).
+#   reject {|path| File.world_writable? path}.join(File::PATH_SEPARATOR)
 
 require 'whimsy/asf/config'
 
 require 'rspec/core/rake_task'
-RSpec::Core::RakeTask.new(:spec)
+raketask = RSpec::Core::RakeTask.new(:spec)
+rspec_opts = ENV['RSPEC_OPTS']
+raketask.rspec_opts = rspec_opts if rspec_opts
 task :default => :spec
 task :spec => 'test:setup'
 task :test => :spec
+
+## Run system and abort if it fails
+def system!(*args)
+  system(*args) or raise "system(#{args}) failed!"
+end
 
 # setup authentication
 task :auth do
@@ -47,13 +54,14 @@ namespace :server do
   end
 end
 
-task "touch" do
+task 'touch' do
   sh 'touch', File.expand_path('../tmp/restart.txt', __FILE__)
 end
 
 file 'package-lock.json' => 'package.json' do
   sh 'npm install'
   sh 'touch package-lock.json'
+  sh 'npm audit fix --force' unless ENV['SKIP_AUDIT'] # as advised in GH action log
 end
 
 file 'test/work' do
@@ -62,16 +70,16 @@ end
 
 file 'test/work/repository' => 'test/work' do
   unless File.exist? 'test/work/repository/format'
-    system 'svnadmin create test/work/repository'
+    system! 'svnadmin create test/work/repository'
   end
 end
 
 file 'test/work/board' => 'test/work/repository' do
   Dir.chdir('test/work') do
     rm_rf 'board' if File.exist? 'board'
-    system "svn co file:///#{Dir.pwd}/repository board"
+    system! "svn co file:///#{Dir.pwd}/repository board"
     cp Dir['../data/*.txt'], 'board'
-    Dir.chdir('board') {system 'svn add *.txt; svn commit -m "initial commit"'}
+    Dir.chdir('board') {system! 'svn add *.txt; svn commit -m "initial commit"'}
   end
 end
 
@@ -86,8 +94,8 @@ end
 task :reset do
   testfiles.each do |testfile|
     if File.exist? "test/work/data/#{testfile}.yml"
-      if 
-        IO.read("test/#{testfile}.yml") != 
+      if
+        IO.read("test/#{testfile}.yml") !=
         IO.read("test/work/data/#{testfile}.yml")
       then
         rm "test/work/data/#{testfile}.yml"
@@ -109,7 +117,7 @@ task :reset do
   end
 end
 
-task :work => ['test/work/board', 
+task :work => ['test/work/board',
   *testfiles.map {|testfile| "test/work/data/#{testfile}.yml"}]
 
 namespace :test do
@@ -129,9 +137,9 @@ task :update do
   # update agenda application
   Dir.chdir File.dirname(__FILE__) do
     puts "#{File.dirname(File.realpath(__FILE__))}:"
-    system 'git pull'
+    system! 'git pull'
   end
-  
+
   # update libs
   if File.exist? "#{ENV['HOME']}/.whimsy"
     libs = YAML.load_file("#{ENV['HOME']}/.whimsy")[:lib] || []
@@ -157,15 +165,15 @@ task :update do
 
       # update repository
       Dir.chdir lib do
-        system 'svn up' if repository == :svn
-        system 'git pull' if repository == :git
+        system! 'svn up' if repository == :svn
+        system! 'git pull' if repository == :git
       end
     end
   end
 
   # update gems
   puts "\nbundle update:"
-  system 'bundle update'
+  system! 'bundle update'
 end
 
 namespace :svn do
@@ -173,7 +181,7 @@ namespace :svn do
     ASF::Config.get(:svn).each do |svn|
       if Dir.exist? svn
         puts "\n#{svn}:"
-        Dir.chdir(svn) {system 'svn up'}
+        Dir.chdir(svn) {system! 'svn up'}
       end
     end
   end

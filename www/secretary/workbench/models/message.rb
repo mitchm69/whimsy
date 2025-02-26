@@ -1,17 +1,24 @@
 #
 # Encapsulate access to messages
 #
+# N.B. this module is referenced by the deliver script, so needs to be quick to load
 
 require 'digest'
 require 'mail'
 require 'time'
 
-require_relative 'attachment.rb'
+require_relative 'attachment'
 
 class Message
   attr_reader :headers
 
   SIG_MIMES = %w(application/pkcs7-signature application/pgp-signature)
+
+  # The name used to represent the raw message as an attachment
+  RAWMESSAGE_ATTACHMENT_NAME = 'rawmessage.txt'
+
+  # default SVN property names to add to documents
+  PROPNAMES_DEFAULT = %w{email:addr email:id email:name email:subject envelope:from envelope:date}
 
   #
   # create a new message
@@ -39,6 +46,10 @@ class Message
       attach.filename == name or attach['Content-ID'].to_s == "<#{name}>"
     end
 
+    if part.nil? and name == RAWMESSAGE_ATTACHMENT_NAME
+      part = self
+    end
+
     if headers
       Attachment.new(self, headers, part)
     end
@@ -50,6 +61,12 @@ class Message
 
   def mail
     @mail ||= Mail.new(@raw.gsub(LF_ONLY, CRLF))
+  end
+
+  # Allows the entire message to be treated as an attachment
+  # used with RAWMESSAGE_ATTACHMENT_NAME
+  def body
+    @raw
   end
 
   def raw
@@ -77,8 +94,8 @@ class Message
   end
 
   def cc=(value)
-    value=value.split("\n") if value.is_a? String
-    @headers[:cc]=value
+    value = value.split("\n") if value.is_a? String
+    @headers[:cc] = value
   end
 
   def bcc
@@ -86,8 +103,8 @@ class Message
   end
 
   def bcc=(value)
-    value=value.split("\n") if value.is_a? String
-    @headers[:bcc]=value
+    value = value.split("\n") if value.is_a? String
+    @headers[:bcc] = value
   end
 
   def subject
@@ -102,14 +119,18 @@ class Message
     mail.text_part
   end
 
-  def self.attachments(headers)
+  # return list of valid attachment names which are not marked deleted (i.e. processed)
+  # if includeDeleted (default false), also include names marked deleted
+  def self.attachments(headers, includeDeleted: false)
     attachments = headers[:attachments]
     return [] unless attachments
     attachments.
-      reject {|attachment| SIG_MIMES.include?(attachment[:mime]) and
-        (not attachment[:name] or attachment[:name] !~ /\.pdf\.(asc|sig)$/)}.
+      reject do |attachment|
+        (!includeDeleted and attachment[:status] == :deleted) or
+        (SIG_MIMES.include?(attachment[:mime]) and (not attachment[:name] or attachment[:name] !~ /\.pdf\.(asc|sig)$/))
+      end.
       map {|attachment| attachment[:name]}.
-      select {|name| name != 'signature.asc'}
+      reject {|name| name == 'signature.asc'}
   end
 
   def attachments
@@ -120,7 +141,7 @@ class Message
   # attachment operations: update, replace, delete
   #
 
-  def update_attachment name, values
+  def update_attachment(name, values)
     attachment = find(name)
     if attachment
       attachment.headers.merge! values
@@ -128,7 +149,7 @@ class Message
     end
   end
 
-  def replace_attachment name, values
+  def replace_attachment(name, values)
     attachment = find(name)
     if attachment
       index = @headers[:attachments].find_index(attachment.headers)
@@ -137,12 +158,15 @@ class Message
     end
   end
 
-  def delete_attachment name
+  def delete_attachment(name)
     attachment = find(name)
     if attachment
-      @headers[:attachments].delete attachment.headers
-      @headers[:status] = :deleted if @headers[:attachments].empty?
+      idx = @headers[:attachments].find_index(attachment.headers)
+      @headers[:attachments][idx][:status] = :deleted # .delete attachment.headers
+      @headers[:status] = :deleted if @headers[:attachments].reject {|att| att[:status] == :deleted}.empty?
       write_headers
+    else
+      raise "Not found #{name}"
     end
   end
 
@@ -160,8 +184,53 @@ class Message
   #
   def write_email
     dir = @mailbox.dir
-    Dir.mkdir dir, 0755 unless Dir.exist? dir
+    Dir.mkdir dir, 0o755 unless Dir.exist? dir
     File.write File.join(dir, @hash), @raw, encoding: Encoding::BINARY
+  end
+
+  def propval(propname)
+    propval = nil
+    begin
+      case propname
+      when 'email:addr'
+        propval = from.addrs.first.address
+      when 'email:id'
+        propval = id
+      when 'email:name'
+        propval = from.addrs.first.name
+      when 'email:subject'
+        propval = subject
+      when 'envelope:from'
+        propval = @headers[:envelope_from]
+      when 'envelope:date'
+        propval = @headers[:envelope_date]
+      else
+        Wunderbar.warn "Don't know propname #{propname}"
+      end
+    rescue StandardError => e
+      Wunderbar.warn "Problem occurred fetching #{propname} #{e}"
+    end
+    propval
+  end
+
+  # don't let a problem with the properties stop the commit
+  #  handle each property separately
+  def propset(pathname, propname)
+    propval = propval(propname)
+    if propval
+      begin
+        system 'svn', 'propset', propname, propval, pathname
+      rescue StandardError => e
+        Wunderbar.warn "Problem occurred adding #{propname} to #{pathname} #{e}"
+      end
+    end
+  end
+
+  # Add some properties from the email
+  def add_email_details(pathname)
+    PROPNAMES_DEFAULT.each do |propname|
+      propset(pathname, propname)
+    end
   end
 
   #
@@ -176,7 +245,8 @@ class Message
 
     if attachments.flatten.length == 1
       ext = File.extname(attachments.first).downcase
-      find(attachments.first).write_svn(repos, filename + ext)
+      pathname = find(attachments.first).write_svn(repos, filename + ext)
+      add_email_details(pathname)
     else
       # validate filename
       unless filename =~ /\A[a-zA-Z][-.\w]+\z/
@@ -191,7 +261,8 @@ class Message
 
       # write out selected attachment
       attachments.each do |attachment, basename|
-        find(attachment).write_svn(repos, filename, basename)
+        pathname = find(attachment).write_svn(repos, filename, basename)
+        add_email_details(pathname)
       end
 
       dest
@@ -323,9 +394,9 @@ class Message
     end
 
     # reformat email addresses
-    mail[:to] = to.map {|addr| addr.format}
-    mail[:cc] = cc.map {|addr| addr.format} unless cc.empty?
-    mail[:bcc] = bcc.map {|addr| addr.format} unless bcc.empty?
+    mail[:to] = to.map(&:format)
+    mail[:cc] = cc.map(&:format) unless cc.empty?
+    mail[:bcc] = bcc.map(&:format) unless bcc.empty?
 
     # return the resulting email
     mail
@@ -396,6 +467,8 @@ class Message
 
     # start an entry for this mail
     headers = {
+      envelope_from: mail.envelope_from,
+      envelope_date: mail.envelope_date.to_s, # effectively the delivery date to secretary@
       from: mail.from_addrs.first,
       name: from,
       time: (mail.date.to_time.gmtime.iso8601 rescue nil),
@@ -434,6 +507,18 @@ class Message
       end
 
       headers[:attachments] = attachments
+    # we also want to treat CLA requests as attachments
+    elsif headers['Subject']&.include?('CLA') &&
+         !headers['Subject'].include?('ICLA') &&
+         !headers['Subject'].include?('iCLA') &&
+         !headers['Subject'].start_with?('Re: ') &&
+         !headers['Subject'].start_with?('RE: ')
+
+      headers[:attachments] = [
+        {name: RAWMESSAGE_ATTACHMENT_NAME,
+          length: message.size,
+          mime: 'text/plain'}
+      ]
     end
 
     headers
@@ -443,11 +528,8 @@ class Message
   def self.liberal_email_parser(addr)
     addr = Mail::Address.new(addr)
   rescue Mail::Field::ParseError
-    if addr =~ /^"([^"]*)" <(.*)>$/
-      addr = Mail::Address.new
-      addr.address = $2
-      addr.display_name = $1
-    elsif addr =~ /^([^"]*) <(.*)>$/
+    if addr =~ /^"([^"]*)" <(.*)>$/ or
+       addr =~ /^([^"]*) <(.*)>$/
       addr = Mail::Address.new
       addr.address = $2
       addr.display_name = $1

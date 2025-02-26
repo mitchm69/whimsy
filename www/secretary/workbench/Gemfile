@@ -6,15 +6,16 @@ if File.exist? version_file
   # for deployment and local testing
   asf_version = File.read(version_file).chomp
   gem 'whimsy-asf', asf_version, path: File.expand_path(root, __FILE__)
+  gem 'puma' # needed for rake server
 else
-  # for docker purposes (atleast for now)
+  # for docker purposes (at least for now)
   gem 'whimsy-asf'
 end
 
 gem 'mail'
 gem 'rake'
 gem 'zip'
-gem 'sinatra', '~> 2.0'
+gem 'sinatra'
 gem 'sanitize'
 gem 'wunderbar'
 gem 'ruby2js'
@@ -22,3 +23,7 @@ gem 'execjs'
 gem 'listen'
 gem 'escape'
 gem 'pdf-reader'
+
+gem 'net-smtp', require: false unless RUBY_VERSION =~ /^2/ # for Ruby 3.1
+
+gem 'ffi', '1.16.3' # HACK to get round bundle update issue

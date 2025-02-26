@@ -61,8 +61,8 @@ lists = ASF::Mail.cansub(user.asf_member?, ASF.pmc_chairs.include?(user), ldap_p
 _html do
   # better system output styling (errors in red)
   _style :system
-  _script src: 'assets/bootstrap-select.js'
-  _link rel: 'stylesheet', href: 'assets/bootstrap-select.css'
+  _script src: '/assets/bootstrap-select.js'
+  _link rel: 'stylesheet', href: '/assets/bootstrap-select.css'
   _body? do
     _whimsy_body(
       title: PAGETITLE,
@@ -83,7 +83,7 @@ _html do
           _a 'your Whimsy personal details page', href: "https://whimsy.apache.org/roster/committer/__self__"
           _ 'where you can change your Forwarding Address(es) and alternate email addresses you may use.'
         end
-        _p 'ASF members can use this form to subscribe to private lists. PMC chairs can subscribe to board lists. (P)PMC members can subscribe to their private@ list.'
+        _p 'ASF members can use this form to subscribe to most private lists. PMC chairs can subscribe to board lists. (P)PMC members can subscribe to their private@ list.'
         _p 'The subscription request will be queued and should be processed within about an hour.'
         _p do
           _ 'To subscribe to other private lists, send an email to the list-subscribe@ address and wait for the request to be manually approved.'
@@ -211,7 +211,8 @@ _html do
           break
         end
 
-        # subreq/unsubreq currently need the listkey
+        # subreq/unsubreq now accept name@dom
+        # Keep the key for the file name
         listkey = ASF::Mail.listdom2listkey(@list)
 
         # Each user can only subscribe once to each list in each timeslot
@@ -221,7 +222,7 @@ _html do
           version: FORMAT_NUMBER,
           availid: $USER,
           addr: @addr,
-          listkey: listkey,
+          listkey: @list,
           # f3
           member_p: user.asf_member?,
           chair_p: ASF.pmc_chairs.include?(user),
@@ -246,11 +247,11 @@ _html do
         Dir.mktmpdir do |tmpdir|
 
           # commit using user's credentials if possible, otherwise use whisysvn
-          if not $PASSWORD
-            credentials = {}
+          if not $PASSWORD # should not happen
+            raise ArgumentError.new "Missing credentials"
           elsif user.asf_member?
             credentials = {user: $USER, password: $PASSWORD}
-          else
+          else # committer has insufficient karma, use the proxy
             credentials = {user: 'whimsysvn'}
           end
 

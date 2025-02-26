@@ -1,17 +1,18 @@
 require_relative '../asf'
-require 'tzinfo'
+require 'active_support'
+require 'active_support/time'
 
 module ASF
   module Board
-    TIMEZONE = ActiveSupport::TimeZone.new('UTC') rescue nil # HACK fix failure in public_committee_info.rb
+    TIMEZONE = ActiveSupport::TimeZone.new('UTC')
 
     # Convert a time to a timeanddate link, shortened if possible.
     # Note: the path must be adjusted if the TIMEZONE changes.
     def self.tzlink(time)
       # build full time zone link
-      path = "/worldclock/fixedtime.html?iso=" +
+      path = '/worldclock/fixedtime.html?iso=' +
         time.strftime('%Y-%m-%dT%H:%M:%S') +
-        "&msg=ASF+Board+Meeting"
+        '&msg=ASF+Board+Meeting'
       # path += '&p1=137' # time zone for PST/PDT locality
       link = "http://www.timeanddate.com/#{path}"
 
@@ -139,7 +140,7 @@ module ASF
       end
     end
 
-    # Does the uid have an entry in the director intials table?
+    # Does the uid have an entry in the director initials table?
     def self.directorHasId?(id)
       DIRECTOR_MAP[id]
     end
@@ -174,6 +175,7 @@ module ASF
       'bdelacretaz' => ['bd', 'Bertrand', 'Bertrand Delacretaz'],
       'brett' => ['bp', 'Brett', 'Brett Porter'],
       'brianm' => ['bmc', 'Brian', 'Brian McCallister'],
+      'cdutz' => ['cd', 'Chris', 'Christofer Dutz'],
       'cliffs' => ['cs', 'Cliff', 'Cliff Schmidt'],
       'coar' => ['kc', 'Ken', 'Ken Coar'],
       'curcuru' => ['sc', 'Shane', 'Shane Curcuru'],
@@ -185,9 +187,12 @@ module ASF
       'geirm' => ['gmj', 'Geir', 'Geir Magnusson Jr'],
       'gstein' => ['gs', 'Greg', 'Greg Stein'],
       'isabel' => ['idf', 'Isabel', 'Isabel Drost-Fromm'],
+      'jbonofre' => ['jb', 'JB', 'Jean-Baptiste Onofre'],
       'jerenkrantz' => ['je', 'Justin', 'Justin Erenkrantz'],
       'jim' => ['jj', 'Jim', 'Jim Jagielski'],
+      'jjirsa' => ['jjr', 'Jeff', 'Jeff Jirsa'],
       'jmclean' => ['jm', 'Justin', 'Justin Mclean'],
+      'kanchana' => ['kw', 'Kanchana', 'Kanchana Welagedara'],
       'ke4qqq' => ['dn', 'David', 'David Nalley'],
       'lrosen' => ['lr', 'Larry', 'Lawrence Rosen'],
       'markt' => ['mt', 'Mark', 'Mark Thomas'],

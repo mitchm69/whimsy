@@ -17,7 +17,6 @@ module ASF
   class SVN
     svn_base = ASF::Config.get(:svn_base)
     if svn_base
-      require 'wunderbar'
       Wunderbar.warn("Found override for svn_base: #{svn_base}")
     else
       svn_base = 'https://svn.apache.org/repos/'
@@ -52,8 +51,7 @@ module ASF
           if repo_override
             svn_over = repo_override[:svn]
             if svn_over
-              require 'wunderbar'
-              Wunderbar.warn("Found override for repository.yml[:svn]")
+              Wunderbar.warn('Found override for repository.yml[:svn]')
               @@repository_entries[:svn].merge!(svn_over)
             end
           end
@@ -61,9 +59,7 @@ module ASF
           @repos = Hash[Dir[*svn].map { |name|
             if Dir.exist? name
               out, _ = self.getInfoItem(name, 'url')
-              if out
-                [out.sub(/^http:/, 'https:'), name]
-              end
+              [out, name] if out
             end
           }.compact]
         end
@@ -196,7 +192,7 @@ module ASF
       unless result
         entry = repo_entry(name)
         if entry
-          raise Exception.new("Unable to find svn checkout for " +
+          raise Exception.new('Unable to find svn checkout for ' +
             "#{@base + entry['url']} (#{name})")
         else
           raise Exception.new("Unable to find svn checkout for #{name}")
@@ -289,6 +285,7 @@ module ASF
     end
 
     # retrieve list, [err] for a path in svn
+    # If timestamp is true, format is xml, else format is a single string with line-breaks
     def self.list(path, user=nil, password=nil, timestamp=false)
       if timestamp
         return self.svn(['list', '--xml'], path, {user: user, password: password})
@@ -297,8 +294,35 @@ module ASF
       end
     end
 
+    # retrieve array of names for a path in svn
+    # directories are suffixed with '/'
+    # If the timestamp is requested, the name is followed by the timestamp in text and in seconds since epoch
+    # Returns [array of names, nil] or [nil, err]
+    def self.listnames(path, user=nil, password=nil, timestamp=false)
+      list = err = nil
+      if timestamp
+        xmlstring, err = self.svn(['list', '--xml'], path, {user: user, password: password})
+        if xmlstring
+          list = []
+          require 'nokogiri'
+          xml_doc = Nokogiri::XML(xmlstring)
+          xml_doc.css('entry').each do |entry|
+            kind = entry.attr('kind')
+            date = entry.css('date').text
+            name = entry.css('name').text
+            name += '/' if kind == 'dir'
+            list << [name, date, Time.parse(date).strftime('%s').to_i]
+          end
+        end
+      else
+        textstring, err = self.svn('list', path, {user: user, password: password})
+        list = textstring.split(%r{\R}) if textstring
+      end
+      [list, err]
+    end
+
     # These keys are common to svn_ and svn
-    VALID_KEYS = %i[user password verbose env dryrun msg depth quiet item revision]
+    VALID_KEYS = %i[user password verbose env dryrun msg depth quiet item revision xml]
 
     # common routine to build SVN command line
     # returns [cmd, stdin] where stdin is the data for stdin (if any)
@@ -322,7 +346,7 @@ module ASF
             Wunderbar.error "Invalid option #{cmd.inspect}" unless cmd =~ %r{^(--[a-z][a-z=]+|-l\d+|-[a-z])$}
           end
         else
-          raise ArgumentError.new "command must be a String or an Array of Strings"
+          raise ArgumentError.new 'command must be a String or an Array of Strings'
         end
       end
       # build svn command
@@ -336,6 +360,8 @@ module ASF
       cmd += ['--depth', depth] if depth
 
       cmd << '--quiet' if options[:quiet]
+
+      cmd << '--xml' if options[:xml]
 
       item = options[:item]
       cmd += ['--show-item', item] if item
@@ -352,18 +378,15 @@ module ASF
         password = options[:password]
         user = options[:user]
       end
+      if user == 'whimsysvn'
+        cmd[0] = 'whimsysvn' # need wrapper for SVN proxy role
+      end
       unless options[:dryrun] # don't add auth for dryrun
-        if password or user == 'whimsysvn' # whimsysvn user does not require password
-          cmd << ['--username', user, '--no-auth-cache']
-        end
         # password was supplied, add credentials
         if password
-          if self.passwordStdinOK?()
-            stdin = password
-            cmd << ['--password-from-stdin']
-          else
-            cmd << ['--password', password]
-          end
+          cmd << ['--username', user, '--no-auth-cache']
+          stdin = password
+          cmd << ['--password-from-stdin']
         end
       end
 
@@ -432,6 +455,73 @@ module ASF
       end
     end
 
+    # as for self.svn, but failure raises an error
+    def self.svn!(command, path, options = {})
+      out, err = self.svn(command, path, options = options)
+      raise Exception.new("SVN command failed: #{err}") if out.nil?
+      return out, err
+    end
+
+    DELIM = '------------------------------------------------------------------------'
+    # parse commit log (non-xml)
+    # Return:
+    # Array of hash entries with keys: :revision, :author, :date, :msg
+    # The :msg entry will be missing if the quiet log option was used
+    # Note: parsing XML output proved somewhat slower
+    def self._parse_commits(src)
+      out = []
+      state = 0
+      linect = ent = msg = nil # ensure visibility
+      src.split(%r{\R}).each do |l|
+        case state
+        when 0 # start of block, should be delim
+          if l == DELIM
+            state = 1
+            ent = {}
+          else
+            raise ArgumentError.new "Unexpected line: '#{l}'"
+          end
+        when 1 # header line
+          revision, author, date, lines = l.split(' | ')
+          ent = {revision: revision, author: author, date: date}
+          if lines =~ %r{^(\d+) lines?} # There are some log lines
+            linect = $1.to_i + 3 # Allow for delim, header and blank line
+            msg = [] # collect the log message lines here
+            state += 1 # get ready to collect log lines
+          else # no log lines provided, we are done
+            out << ent
+            state = 0
+          end
+        else # collecting log lines
+          state += 1
+          msg << l if state > 3 # skip the blank line
+          if state == linect # we have read all the lines
+            ent[:msg] = msg.join("\n")
+            out << ent
+            state = 0
+          end
+        end
+      end
+      out
+    end
+
+    # get list of commits from initial to current, and parses the output
+    # Returns: [out, err], where:
+    #  out = array of entries, each of which is a hash
+    #  err = error message (in which case out is nil)
+    def self.svn_commits(path, before, after, options = {})
+      out, err = ASF::SVN.svn('log', path, options.merge({revision: "#{before}:#{after}"}))
+      out = _parse_commits(out) if out
+      return out, err
+    end
+
+    # as for self.svn_commits, but failure raises an error
+    def self.svn_commits!(path, before, after, options = {})
+      out, err = self.svn_commits(path, before, after, options = options)
+      raise Exception.new("SVN command failed: #{err}") if out.nil?
+      return out, err
+    end
+
     # low level SVN command for use in Wunderbar context (_json, _text etc)
     # params:
     # command - info, list etc
@@ -468,14 +558,16 @@ module ASF
         %i[env user password].each do |k|
           options.delete(k)
         end
+        # convert auth for use by _svn_build_cmd
+        auth.flatten.each_slice(2) do |a, b|
+          options[:user] = b if a == '--username'
+          options[:password] = b if a == '--password'
+        end
       end
 
 
       cmd, stdin = self._svn_build_cmd(command, path, options)
       sysopts[:stdin] = stdin if stdin
-      if auth # insert after the command name
-        cmd.insert(2, auth, '--no-auth-cache')
-      end
 
       # This ensures the output is captured in the response
       _.system ['echo', [cmd, sysopts].inspect] if options[:verbose] # includes auth
@@ -729,15 +821,11 @@ module ASF
 
         sysopts = {}
         if env
-          if self.passwordStdinOK?()
-            syscmd << ['--username', env.user, '--password-from-stdin']
-            sysopts[:stdin] = env.password
-          else
-            syscmd << ['--username', env.user, '--password', env.password]
-          end
+          syscmd << ['--username', env.user, '--password-from-stdin']
+          sysopts[:stdin] = env.password
         end
         if options[:verbose]
-          _.system 'echo', [syscmd.flatten, sysopts.to_s]
+          _.system 'echo', [syscmd.flatten, "\n", commands.join("\n")]
         end
         if options[:dryrun]
           rc = _.system syscmd.insert(0, 'echo')
@@ -776,12 +864,21 @@ module ASF
       throw IOError.new("Could not check if #{path} exists: #{err}")
     end
 
-    # DRAFT DRAFT
+    # Should agree with modules/whimsy_server/files/subversion-config-www in Puppet
+    MIMETYPES = { # if the extension matches, then apply the mime-type as below
+      '.jpg' => 'image/jpeg',
+      '.pdf' => 'application/pdf',
+      '.png' => 'image/png',
+      '.tif' => 'image/tiff',
+      '.tiff' => 'image/tiff',
+    }
+
     # create a new file and fail if it already exists
+    # sets the mimetype if the extension is present in the MIMETYPES hash
     # Parameters:
     #  directory - parent directory as an SVN URL
     #  filename - name of file to create
-    #  text - text of file to create
+    #  data - content of file: can be a text string, or a Tempfile
     #  msg - commit message
     #  env - user/pass
     #  _ - wunderbar context
@@ -792,18 +889,27 @@ module ASF
     # 0 on success
     # 1 if the file exists
     # IOError on unexpected error
-    def self.create_(directory, filename, text, msg, env, _, options={})
+    def self.create_(directory, filename, data, msg, env, _, options={})
       parentrev, err = self.getInfoItem(directory, 'revision', env.user, env.password)
       unless parentrev
         throw RuntimeError.new("Failed to get revision for #{directory}: #{err}")
       end
       target = File.join(directory, filename)
-      return 1 if self.exist?(target, parentrev, env, options)
+      return 1 if self.exist?(target, parentrev, env) # options not relevant here
       rc = nil
       Dir.mktmpdir do |tmpdir|
-        source = Tempfile.new('create_source', tmpdir)
-        File.write(source, text)
+        if data.instance_of? Tempfile
+          source = data
+        else
+          source = Tempfile.new('create_source', tmpdir)
+          File.write(source, data, encoding: Encoding::BINARY)
+        end
         commands = [['put', source.path, target]]
+        # Add mimetype if known
+        mimetype = MIMETYPES[File.extname(filename)]
+        if mimetype
+          commands << ['propset', 'svn:mime-type', mimetype, target]
+        end
         # Detect file created in parallel. This generates the error message:
         # svnmucc: E160020: File already exists: <snip> path 'xxx'
         rc = self.svnmucc_(commands, msg, env, _, parentrev, options.merge({tmpdir: tmpdir}))
@@ -917,8 +1023,8 @@ module ASF
         return nil, "Cannot find URL for '#{name}'"
       end
       listfile, listfiletmp = self.listingNames(name, dir)
-      filerev = "0"
-      svnrev = "?"
+      filerev = '0'
+      svnrev = '?'
       filedates = false
       begin
         open(listfile) do |l|
@@ -937,7 +1043,7 @@ module ASF
             list = self.list(url, user, password, storedates)
             if storedates
               require 'nokogiri'
-              require 'date'
+              require 'time'
               open(listfiletmp, 'w') do |w|
                 w.puts "#{EPOCH_TAG}#{svnrev}" # show that this file has epochs
                 xml_doc = Nokogiri::XML(list)
@@ -945,7 +1051,7 @@ module ASF
                   kind = entry.css('@kind').text
                   name = entry.at_css('name').text
                   date = entry.at_css('date').text
-                  epoch = DateTime.parse(date).strftime('%s')
+                  epoch = Time.parse(date).strftime('%s')
                   # The separator is the last character of the epoch tag
                   w.puts "%s#{EPOCH_SEP}%s%s" % [epoch, name, kind == 'dir' ? '/' : '']
                 end
@@ -980,7 +1086,7 @@ module ASF
     # The tag should be regarded as opaque
     def self.getlisting(name, tag=nil, trimSlash = true, getEpoch = false, dir = nil)
       listfile, _ = self.listingNames(name, dir)
-      curtag = "%s:%s:%d" % [trimSlash, getEpoch, File.mtime(listfile)]
+      curtag = '%s:%s:%d' % [trimSlash, getEpoch, File.mtime(listfile)]
       if curtag == tag
         return curtag, nil
       else
@@ -1007,18 +1113,6 @@ module ASF
       end
     end
 
-    # Does this host's installation of SVN support --password-from-stdin?
-    def self.passwordStdinOK?
-      return @svnHasPasswordFromStdin unless @svnHasPasswordFromStdin.nil?
-      out, _err, status = Open3.capture3('svn', 'help', 'cat', '-v')
-      if status.success? && out
-        @svnHasPasswordFromStdin = out.include? '--password-from-stdin'
-      else
-        @svnHasPasswordFromStdin = false
-      end
-      @svnHasPasswordFromStdin
-    end
-
     private
 
     # Calculate svn parent directory allowing for overrides
@@ -1040,8 +1134,8 @@ module ASF
       else
         dir = self.svn_parent
       end
-      return File.join(dir, "%s.txt" % name),
-             File.join(dir, "%s.tmp" % name)
+      return File.join(dir, '%s.txt' % name),
+             File.join(dir, '%s.tmp' % name)
     end
 
     # Get all the SVN entries

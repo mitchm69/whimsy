@@ -5,7 +5,7 @@
 
 require 'time'
 
-def Monitor.system(previous_status)
+def StatusMonitor.system(previous_status)
   name=:puppet
   status = {}
   status[name] = {
@@ -42,7 +42,6 @@ def Monitor.system(previous_status)
 
   # Are we the active node?
   begin
-    require_relative '../../../lib/whimsy/asf/status'
     active = Status.active?
     rescue LoadError, StandardError => e
       active = e.inspect

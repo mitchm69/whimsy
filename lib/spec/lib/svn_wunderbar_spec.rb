@@ -21,9 +21,9 @@ require 'whimsy/asf'
 require 'wunderbar'
 
 `which svnmucc`
-svnmucc_missing = $?.exitstatus == 0 ? false : "svnmucc not found"
+svnmucc_missing = $?.exitstatus == 0 ? false : 'svnmucc not found'
 
-describe "ASF::SVN.svn_!" do
+describe 'ASF::SVN.svn_!' do
   it "svn_!('info') should return array with Name:" do
     repo = File.join(ASF::SVN.svnurl('attic-xdocs'),'_template.xml')
 
@@ -48,8 +48,8 @@ describe "ASF::SVN.svn_!" do
   end
 end
 
-describe "ASF::SVN.svn_" do
-  it "svn_(nil,nil,nil) should raise error" do
+describe 'ASF::SVN.svn_' do
+  it 'svn_(nil,nil,nil) should raise error' do
     expect { ASF::SVN.svn_(nil,nil,nil) }.to raise_error(ArgumentError, 'command must not be nil')
   end
   it "svn_('st',nil,nil) should raise error" do
@@ -82,7 +82,7 @@ describe "ASF::SVN.svn_" do
 
     expect(rc).to be(0)
     expect(out['transcript'].class).to equal(Array)
-    exp = ["svn", "info", "--non-interactive", "--", "https://svn.apache.org/repos/asf/attic/site/xdocs/projects/_template.xml"]
+    exp = ['svn', 'info', '--non-interactive', '--', 'https://svn.apache.org/repos/asf/attic/site/xdocs/projects/_template.xml']
     expect(out['transcript'][1]).to eq(exp.join(' '))
   end
   it "svn_('info', 'no file') should fail with E200009" do
@@ -97,65 +97,53 @@ describe "ASF::SVN.svn_" do
     expect(out['transcript'].join("\n")).to match(/svn: E200009:/)
   end
 
-  it "auth: should override env: and user:/password:" do
+  it 'auth: should override env: and user:/password:' do
     rc1, out1 = _json do |_|
-      ASF::SVN.svn_('help', 'help', _, {auth: [['a','b']], env: ENV_.new('c','d'), user: 'user', password: 'pass', verbose: true, dryrun: true})
+      ASF::SVN.svn_('help', 'help', _, {auth: [['--username', 'a', '--password', 'b']], env: ENV_.new('c','d'), user: 'user', password: 'pass', verbose: true, dryrun: true})
     end
     expect(rc1).to eq(0)
-    exp = [["svn", "help", [["a", "b"]], "--no-auth-cache", "--non-interactive", "--", "help"], {}]
+    exp = [['svn', 'help', '--non-interactive', '--', 'help'], {}]
     act = out1['transcript'][1]
     expect(act).to eq(exp.inspect)
   end
 
-   it "env: should include password" do
+   it 'env: should include password' do
     rc, out = _json do |_|
       ASF::SVN.svn_('help', 'help', _, {env: ENV_.new('a','b'), verbose: true})
     end
     expect(rc).to eq(0)
     act = out['transcript'][1]
-    if ASF::SVN.passwordStdinOK?
-      exp = [["svn", "help", "--non-interactive", ["--username", "a", "--no-auth-cache"], ["--password-from-stdin"], "--", "help"], {:stdin=>"b"}]
-    else
-      exp = [["svn", "help", "--non-interactive", ["--username", "a", "--no-auth-cache"], ["--password", "b"], "--", "help"], {}]
-    end
+    exp = [['svn', 'help', '--non-interactive', ['--username', 'a', '--no-auth-cache'], ['--password-from-stdin'], '--', 'help'], {:stdin=>'b'}]
     expect(act).to eq(exp.inspect)
    end
 
-   it "env: should include password and override user" do
+   it 'env: should include password and override user' do
     rc, out = _json do |_|
       ASF::SVN.svn_('help', 'help', _, {env: ENV_.new('a','b'), verbose: true, user: 'user', password: 'pass'})
     end
     expect(rc).to eq(0)
     act = out['transcript'][1]
-    if ASF::SVN.passwordStdinOK?
-      exp = [["svn", "help", "--non-interactive", ["--username", "a", "--no-auth-cache"], ["--password-from-stdin"], "--", "help"], {:stdin=>"b"}]
-    else
-      exp = [["svn", "help", "--non-interactive", ["--username", "a", "--no-auth-cache"], ["--password", "b"], "--", "help"], {}]
-    end
+    exp = [['svn', 'help', '--non-interactive', ['--username', 'a', '--no-auth-cache'], ['--password-from-stdin'], '--', 'help'], {:stdin=>'b'}]
     expect(act).to eq(exp.inspect)
    end
 
-   it "user: alone should not appear" do
+   it 'user: alone should not appear' do
     rc, out = _json do |_|
       ASF::SVN.svn_('help', 'help', _, {verbose: true, user: 'user'})
     end
     expect(rc).to eq(0)
     act = out['transcript'][1]
-    exp = [["svn", "help", "--non-interactive", "--", "help"], {}]
+    exp = [['svn', 'help', '--non-interactive', '--', 'help'], {}]
     expect(act).to eq(exp.inspect)
    end
 
-   it "user: and password: should appear" do
+   it 'user: and password: should appear' do
     rc, out = _json do |_|
       ASF::SVN.svn_('help', 'help', _, {verbose: true, user: 'user', password: 'pass'})
     end
     expect(rc).to eq(0)
     act = out['transcript'][1]
-    if ASF::SVN.passwordStdinOK?
-      exp = [["svn", "help", "--non-interactive", ["--username", "user", "--no-auth-cache"], ["--password-from-stdin"], "--", "help"], {:stdin=>"pass"}]
-    else
-      exp = [["svn", "help", "--non-interactive", ["--username", "user", "--no-auth-cache"], ["--password", "pass"], "--", "help"], {}]
-    end
+    exp = [['svn', 'help', '--non-interactive', ['--username', 'user', '--no-auth-cache'], ['--password-from-stdin'], '--', 'help'], {:stdin=>'pass'}]
     expect(act).to eq(exp.inspect)
    end
 
@@ -181,12 +169,12 @@ describe "ASF::SVN.svn_" do
   #  end
 end
 
-describe "ASF::SVN.update" do
+describe 'ASF::SVN.update' do
   it "update('_template.xml') should return array" do
     repo = File.join(ASF::SVN.svnurl('attic-xdocs'),'_template.xml')
 
     rc, out = _json do |_|
-      ASF::SVN.update(repo, "Dummy message", ENV_.new, _, {dryrun:true}) do |tmpdir, contents|
+      ASF::SVN.update(repo, 'Dummy message', ENV_.new, _, {dryrun:true}) do |tmpdir, contents|
         contents+"test\n"
       end
     end
@@ -199,27 +187,27 @@ describe "ASF::SVN.update" do
 
 end
 
-describe "ASF::SVN.svnmucc_", skip: svnmucc_missing do
-  it "svnmucc_(nil,nil,nil,nil,nil) should fail" do
-    expect { ASF::SVN.svnmucc_(nil,nil,nil,nil,nil) }.to raise_error(ArgumentError, "commands must be an array")
+describe 'ASF::SVN.svnmucc_', skip: svnmucc_missing do
+  it 'svnmucc_(nil,nil,nil,nil,nil) should fail' do
+    expect { ASF::SVN.svnmucc_(nil,nil,nil,nil,nil) }.to raise_error(ArgumentError, 'commands must be an array')
   end
-  it "svnmucc_([],nil,nil,nil,nil) should fail" do
-    expect { ASF::SVN.svnmucc_([],nil,nil,nil,nil) }.to raise_error(ArgumentError, "msg must not be nil")
+  it 'svnmucc_([],nil,nil,nil,nil) should fail' do
+    expect { ASF::SVN.svnmucc_([],nil,nil,nil,nil) }.to raise_error(ArgumentError, 'msg must not be nil')
   end
   it "svnmucc_([],'test',nil,nil,nil) should fail" do
-    expect { ASF::SVN.svnmucc_([],'test',nil,nil,nil) }.to raise_error(ArgumentError, "env must not be nil")
+    expect { ASF::SVN.svnmucc_([],'test',nil,nil,nil) }.to raise_error(ArgumentError, 'env must not be nil')
   end
   it "svnmucc_([],'test',ENV_.new,nil,nil) should fail" do
-    expect { ASF::SVN.svnmucc_([],ENV_.new,'test',nil,nil) }.to raise_error(ArgumentError, "_ must not be nil")
+    expect { ASF::SVN.svnmucc_([],ENV_.new,'test',nil,nil) }.to raise_error(ArgumentError, '_ must not be nil')
   end
   it "svnmucc_([[],'x',[]],'test',ENV_.new,'_',nil) should fail" do
-    expect { ASF::SVN.svnmucc_([[],'x',[]],ENV_.new,'test','_',nil) }.to raise_error(ArgumentError, "command entries must be an array")
+    expect { ASF::SVN.svnmucc_([[],'x',[]],ENV_.new,'test','_',nil) }.to raise_error(ArgumentError, 'command entries must be an array')
   end
   it "svnmucc_([['xyz']],'test',ENV_.new,_,nil) should fail" do
     rc, out = _json do |_|
       ASF::SVN.svnmucc_([['xyz']],'test',ENV_.new,_,nil)
     end
-    puts out if rc.nil? # Try to debug Travis OSX failure
+    puts out if rc.nil? # Try to debug Travis macOS failure
     expect(rc).to eq(1)
   end
   it "svnmucc_([['help']],'test',ENV_.new,_,nil) should produce help message with --message test" do
@@ -299,10 +287,8 @@ describe "ASF::SVN.svnmucc_", skip: svnmucc_missing do
     ts = out['transcript']
     expect(ts).to be_kind_of(Array)
     expect(ts[0]).to match(%r{\$ echo})
-    # either --password pass or --password-from-stdin {:stdin=>\"pass\"}
-    # This depends on the order in which the command line is built up
-    expect(ts[1]).to match(%r{^svnmucc .*--message test .*--username user --password.+pass})
-    expect(ts[4]).to eq('usage: svnmucc ACTION...') # output of svnmucc help
+    expect(ts[1]).to match(%r{^svnmucc .*--message test .*--username user --password-from-stdin})
+    expect(ts[5]).to eq('usage: svnmucc ACTION...') # output of svnmucc help
   end
   it "svnmucc_([['help']],'test',ENV_.new,_,nil,{root: root}) should include --root-url" do
     root = ASF::SVN.svnurl!(SAMPLE_SVN_NAME)

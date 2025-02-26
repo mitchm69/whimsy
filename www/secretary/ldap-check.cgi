@@ -13,7 +13,7 @@ The two committers groups should have the same members:
 - cn=committers,ou=groups,dc=apache,dc=org (old unix group)
 
 All committers should be in LDAP people
-LDAP people whould be committers (unles login is disabled)
+LDAP people would be committers (unless login is disabled)
 
 =end
 
@@ -22,6 +22,8 @@ $LOAD_PATH.unshift '/srv/whimsy/lib'
 require 'whimsy/asf'
 require 'whimsy/asf/mlist'
 require 'wunderbar'
+
+ASF::ICLAFiles.update_cache({})
 
 _html do
   _style %{
@@ -34,8 +36,8 @@ _html do
 
   _h1 'LDAP membership checks'
 
-  old = ASF::Group['committers'].memberids
-  new = ASF::Committer.listids
+  cmtgrp = ASF::Group['committers'].memberids # cn=committers,ou=groups
+  cmtrol = ASF::Committer.listids # cn=committers,ou=role
   people = ASF::Person.preload(%w(uid createTimestamp asf-banned asf-altEmail mail loginShell))
 
   # fetch the email details up front to avoid rescanning
@@ -90,8 +92,8 @@ _html do
         po_cm = []
       end
       notc=[]
-      notc += po.reject {|n| old.include? n}
-      notc += pm.reject {|n| old.include? n}
+      notc += po.reject {|n| cmtgrp.include? n}
+      notc += pm.reject {|n| cmtgrp.include? n}
       if po_pm.size > 0 or cm_po.size > 0 or po_cm.size > 0 or notc.size > 0
         _tr do
           _td do
@@ -122,6 +124,9 @@ _html do
               if ASF::Person[id].nologin?
                 _ 'NoLogin'
               end
+              if ASF::Person[id].asf_banned?
+                _ 'Banned'
+              end
               _br
             end
           end
@@ -130,14 +135,13 @@ _html do
     end
   end
 
-  _h2 'people who are not committers (excluding nologin)'
+  _h2 'people who are not committers (excluding nologin or banned)'
 
-  non_committers = people.reject { |p| p.nologin? or old.include? p.name or p.name == 'apldaptest'}
+  non_committers = people.reject { |p| p.inactive? or cmtgrp.include? p.name or p.name == 'apldaptest'}
   if non_committers.length > 0
     _table do
       _tr do
         _th 'UID'
-        _th 'asf-banned?'
         _th 'Date'
         _th 'ICLA'
         _th 'Subscriptions'
@@ -149,7 +153,6 @@ _html do
           _td do
             _a p.name, href: '/roster/committer/' + p.name
           end
-          _td p.asf_banned?
           _td p.createDate
           if icla
             if icla.claRef
@@ -178,7 +181,7 @@ _html do
 
   _h2 'People who are banned or have nologin but are still committers'
 
-  people_projects=Hash.new{|h,k| h[k]=Array.new}
+  people_projects = Hash.new {|h, k| h[k] = Array.new}
 
   projects.keys.each do |prj|
     prj.members.each do |m|
@@ -191,13 +194,14 @@ _html do
 
   _table do
     _tr do
-          _th 'UID'
-          _th 'Created'
-          _th 'asf-banned?'
-          _th 'Login'
-          _th 'Projects (if any)'
+      _th 'UID'
+      _th 'Created'
+      _th 'asf-banned?'
+      _th 'Login'
+      _th 'Projects (if any)'
     end
-    people.select {|p| p.inactive? and new.include? p.name}.sort_by(&:name).each do |p|
+    people.select {|p| p.inactive? and
+      (cmtrol.include?(p.name) or cmtgrp.include?(p.name))}.sort_by(&:name).each do |p|
       _tr do
         _td do
           _a p.name, href: '/roster/committer/' + p.name
@@ -214,9 +218,9 @@ _html do
 
   _table do
     _tr do
-          _th 'UID'
-          _th 'Created'
-          _th 'Login'
+      _th 'UID'
+      _th 'Created'
+      _th 'Login'
     end
     people.select {|p| p.inactive? and not p.asf_banned?}.sort_by(&:name).each do |p|
       _tr do
@@ -232,7 +236,7 @@ _html do
   _h2 'committers who are not in LDAP people'
 
   # which committers are not people?
-  non_people = old.reject {|id| people.map(&:name).include? id}
+  non_people = cmtgrp.reject {|id| people.map(&:name).include? id}
 
   if non_people.length > 0
     _table do
@@ -262,24 +266,24 @@ _html do
     _ 'These should agree'
   end
 
-  new_old = new - old
-  old_new = old - new
+  new_old = cmtrol - cmtgrp
+  old_new = cmtgrp - cmtrol
 
   if new_old.size > 0
     _p do
       _ 'The following ids are in the new group but not the old'
       _br
-      _ new_old.map{|x| x.inspect}.join(',')
+      _ new_old.map(&:inspect).join(',')
     end
   elsif old_new.size == 0
-  _p 'The groups are equal'
+    _p 'The groups are equal'
   end
 
   if old_new.size > 0
     _p do
       _ 'The following ids are in the old group but not the new'
       _br
-      _ old_new.map{|x| x.inspect}.join(',')
+      _ old_new.map(&:inspect).join(',')
     end
   end
 

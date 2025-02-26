@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-PAGETITLE = "Member Meeting Activity Status" # Wvisible:meeting
+PAGETITLE = "Your Member Meeting Attendance Status and Update Tool" # Wvisible:meeting
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 
 require 'whimsy/asf'
@@ -7,7 +7,7 @@ require 'wunderbar/bootstrap'
 require 'date'
 require 'json'
 require 'tmpdir'
-require_relative 'meeting-util'
+require 'whimsy/asf/meeting-util'
 
 # produce HTML
 _html do
@@ -29,12 +29,13 @@ _html do
   end
   _body? do
     MEETINGS = ASF::SVN['Meetings']
-    attendance = MeetingUtil.get_attendance(MEETINGS)
-    latest = MeetingUtil.get_latest(MEETINGS)
+    attendance = ASF::MeetingUtil.get_attendance(MEETINGS)
+    latest = ASF::MeetingUtil.get_latest(MEETINGS)
 
     @user ||= $USER
     @meetingsMissed = (@meetingsMissed || 3).to_i
 
+    # Allow a non-participating member to post a request to go emeritus
     if _.post? and @status == 'go emeritus' and $USER == @user
       # stub out roster functions
       require 'mail'
@@ -58,21 +59,8 @@ _html do
       end
     end
 
-    # get static/dynamic tracker
-    begin
-      tracker = JSON.parse(IO.read(File.join(latest, 'non-participants.json')))
-    rescue Errno::ENOENT => err
-      meetingsMissed = @meetingsMissed
-      _attendance, matrix, _dates, _nameMap = MeetingUtil.get_attend_matrices(MEETINGS)
-      inactive = matrix.select do |id, _name, _first, missed|
-        id and missed >= meetingsMissed
-      end
-    
-      current_status = MeetingUtil.current_status(latest)
-      tracker = inactive.map {|id, name, _first, missed|
-        [id, {'name' => name, 'missed' => missed, 'status' => current_status[id]}]
-      }.to_h
-    end
+    # Get live data of members' attendance or current proxies submitted
+    tracker = ASF::MeetingUtil.tracker(@meetingsMissed)
 
     # determine user's name as found in members.txt
     name = ASF::Member.find_text_by_id(@user).to_s.split("\n").first
@@ -93,27 +81,41 @@ _html do
         '/members/proxy' => 'Assign A Proxy For Next Meeting',
         '/members/non-participants' => 'Members Not Participating',
         ASF::SVN.svnpath!('foundation','members.txt') => 'See Official Members.txt File',
-        MeetingUtil::RECORDS => 'Official Past Meeting Records'
+        ASF::MeetingUtil::RECORDS => 'Official Past Meeting Records'
       },
       helpblock: -> {
+        _p "This page shows your personal attendance record at past Member's meetings, as of meeting #{latest}."
+        _p %{
+          Inactive members (only) will see a button to request a proxy for the next meeting, and
+          a second button that they can use to request to go emeritus.  They also
+          will see the text of an issue that will be placed before the membership
+          for a vote should they not take either of these two options.
+        }
         _p do
-          _ "This page shows your personal attendance record at past Member's meetings, as of meeting #{latest}."
-          _ %{
-            It is also a poll of members who have not participated in
-            ASF Members Meetings or Elections in the past three years, and
-            if you have been inactive, asks you if you wish to remain active or go emeritus.  Inactive members
-            (only) will see a form below and can
-            indicate their choice and provide feedback on meetings by pushing one of the buttons below.
+          _b %{
+            N.B.
+            Attendance details for the June 2022 meeting were only added recently.
+            Unfortunately this was only discovered after an email was sent to members.
+            Apologies to those of you who received an email in error.
           }
+
         end
       }
     ) do
 
+      member_status = ASF::Person.find(@user).asf_member?
+
       _p_ do
-        _span "#{name}, your current meeting attendance status is: "
-        _code tracker[@user]['status']
+        if member_status != true
+          _span "#{name}, your current membership status is: "
+          _code member_status
+        else
+          _span "#{name}, your current meeting attendance status is: "
+          _code tracker[@user]['status']
+        end
       end
-      if active
+
+      if active and member_status == true
         att = miss = 0
         if !matrix.nil?
           matrix.each do |date, status|
@@ -150,7 +152,7 @@ _html do
           else
             _p %{
               Based on this status, the following text will be placed before the membership as a vote
-              unless you either assign a proxy for the next meeting or voluntarily request a conversion
+              UNLESS you either assign a proxy for the next meeting or voluntarily request a conversion
               to emeritus status.
             }
           end
@@ -175,9 +177,10 @@ _html do
 
           _p_ %{
             If you haven't attended or voted in meetings recently, please consider participating, at
-            least by proxy, in the upcoming membership meeting.  Assigning a proxy does NOT prevent 
-            you from attending meetings or
-            automatically grant the assignee to the right to vote on your behalf.
+            least by proxy, in the upcoming membership meeting.  Assigning a proxy does NOT prevent
+            you from attending meetings.  Normally, your proxy will just be at the meeting to
+            mark your attendance.  You will still get any vote emails yourself.  Remember that
+            voting at a meeting also counts for attendance.
           }
         end
       end

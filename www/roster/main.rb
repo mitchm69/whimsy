@@ -138,10 +138,11 @@ get '/committer/index.json' do
       map {|person, list| [person, list.map(&:first)]}]
 
     ASF::Person.preload(['id','name','mail','githubUsername'])
+    member_statuses = ASF::Member.member_statuses
     # build a list of people, their public-names, and email addresses
     index = ASF::Person.list.sort_by(&:id).map {|person|
       result = {id: person.id, name: person.public_name, mail: mail[person], githubUsername: person.attrs['githubUsername'] || []}
-      result[:member] = true if person.asf_member?
+      result[:asf_member_status] = member_statuses[person.id]
       result
     }.to_json
 
@@ -195,6 +196,7 @@ get '/committer2/index.json' do
     ASF::ICLA.each {|icla|
       if icla.noId?
         if @auth[:secretary]
+          ASF::ICLAFiles.update_cache(env)
           iclaFile = ASF::ICLAFiles.match_claRef(icla.claRef) # must be secretary
           tmp << { name: icla.name, mail: icla.email, claRef: icla.claRef, iclaFile: iclaFile}
         else
@@ -237,7 +239,7 @@ get '/committer/:name' do |name|
 end
 
 post '/committer/:userid/:file' do |name, file|
-  # Workround for handling arrays
+  # Workaround for handling arrays
   # if the key :array_prefix is defined, the value is assumed to be the prefix for
   # a list of values with the names: prefix1, prefix2 etc
   # All non-empty values are collected and stored in an array which is added to the
@@ -277,6 +279,7 @@ get '/icla/index.json' do
   ASF::ICLA.each {|icla|
     if icla.noId?
       if @auth[:secretary] # only secretary sees ICLAs
+        ASF::ICLAFiles.update_cache(env)
         iclaFile = ASF::ICLAFiles.match_claRef(icla.claRef)
         icla_index << { name: icla.name, mail: icla.email, claRef: icla.claRef, iclaFile: iclaFile}
       else
@@ -317,7 +320,7 @@ end
 
 get '/group/:name' do |name|
   @auth = Auth.info(env)
-  @group = Group.serialize(name)
+  @group = Group.serialize(name, params['type'])
   pass unless @group and not @group.empty?
   _html :group
 end
@@ -409,7 +412,7 @@ end
 get '/orgchart/:name' do |name|
   person = ASF::Person.find(env.user)
 
-  unless person.asf_member? or ASF.pmc_chairs.include? person
+  unless person.asf_chair_or_member?
     halt 401, "Not authorized\n"
   end
 
@@ -427,6 +430,10 @@ end
 
 # for debugging purposes
 get '/env' do
+  Wunderbar.info 'Info'
+  Wunderbar.warn 'Warn'
+  Wunderbar.error 'Error'
+  Wunderbar.fatal 'Fatal'
   content_type 'text/plain'
 
   asset = {
@@ -451,8 +458,11 @@ get '/env' do
         size: source && File.size(source),
       }
     },
+    params: params,
+    line: __LINE__ # temp
   }
 
+  $stderr.puts 'Stderr' # debug
   JSON.pretty_generate(env: env, ENV: ENV.to_h, asset: asset)
 end
 

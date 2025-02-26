@@ -31,7 +31,9 @@ module ASF
       # load all ICLA emails in one pass
       ASF::ICLA.each do |icla|
         person = Person.find(icla.id)
-        list[icla.email.downcase] ||= person
+        icla.emails.each do |email|
+          list[email.downcase] ||= person
+        end
         next if icla.noId?
 
         list["#{icla.id.downcase}@apache.org"] ||= person
@@ -77,6 +79,29 @@ module ASF
     # Return: true or false
     def self.unsubbable?(listid)
       !self._cannot_unsub.include? listid
+    end
+
+    # Can a list be read by the person with the specified attributes?
+    # Note: this is different from cansub - not all readable lists can be self-subscribed
+    #
+    # Params:
+    # listid: list@domain
+    # member: true if member
+    # pmc_chair: true if pmc_chair
+    # ldap_pmcs: list of (P)PMC mail_list names to which the user belongs
+    # Return true if person is allowed to read the list
+    # nil if the list is not known
+    # otherwise true
+    def self.canread(listid, member=false, pmc_chair=false, ldap_pmcs=[])
+      flags = getflags(listid)
+      return nil if flags.nil? # Not a known list
+      return true unless isModSub?(flags) # subscription not needed
+      return true if self._cannot_unsub.include? listid # must be system maintained, so assume OK
+      return true if self._committers_allowed().include?(listid)
+      return true if member # They can read anything
+      return true if pmc_chair and self._chairs_allowed.include? listid
+      return true if ldap_pmcs and ldap_pmcs.include? listid.split('@')[-1].sub('.apache.org', '')
+      false
     end
 
     # which lists are available for subscription via Whimsy?
@@ -198,7 +223,7 @@ module ASF
       return "apachecon-#{list}" if dom == 'apachecon.com'
       return list if dom == 'apache.org'
 
-      dom.sub(".apache.org", '-') + list
+      dom.sub('.apache.org', '-') + list
     end
 
     # Convert dom, list to form used in mail_list_autosub.yml
@@ -241,7 +266,7 @@ module ASF
 
     # Load the auto-subscription file
     def self._load_auto
-      apmail_bin = ASF::SVN['apmail_bin']
+      apmail_bin = File.join(ASF::Config[:puppet_data], 'apmail_bin') # Loaded by puppet
       auto_file = File.join(apmail_bin, 'mail_list_autosub.yml')
       auto_mtime = File.mtime(auto_file) # fetch this up front in case file updated during loading
       if not @auto or auto_mtime != @auto_mtime
@@ -257,16 +282,17 @@ module ASF
       if not @flags or File.mtime(@list_flags) != @flags_mtime
         lists = []
         File.open(@list_flags).each do |line|
-          if line.match(/^F:-([a-zA-Z]{26}) (\S+) (\S+)/)
+          if line.match(/(?:^F:-([a-zA-Z]{26}) )?(\S+) (\S+)/)
             flags, dom, list = $1, $2, $3
             next if list =~ /^infra-[a-z]$/ or (dom == 'incubator' and list == 'infra-dev')
 
-            lists << [dom, list, flags]
+            lists << [dom, list, flags || '']
           else
             raise "Unexpected flags: #{line}"
           end
         end
         @flags = lists
+        @flags_hash = lists.map{|d,l,f| ["#{l}@#{d}",f]}.to_h
         @flags_mtime = File.mtime(@list_flags)
       end
     end
@@ -284,6 +310,12 @@ module ASF
 
         yield [d, l, f]
       end
+    end
+
+    # get flags for list@domain; nil if not found
+    def self.getflags(listid)
+      self._load_flags()
+      @flags_hash[listid]
     end
 
     # Do the flags indicate subscription moderation?
@@ -307,8 +339,11 @@ module ASF
       return @obsolete_emails if @obsolete_emails
 
       result = []
-      if icla && active_emails.none? {|mail| mail.downcase == icla.email.downcase}
-        result << icla.email
+      if icla
+        icla.emails.each do |email|
+          active_emails.none? {|mail| mail.downcase == email.downcase}
+          result << email
+        end
       end
       @obsolete_emails = result
     end
@@ -323,57 +358,6 @@ module ASF
     # email addresses. (But don't add notinavail@apache.org)
     def all_mail
       (active_emails + obsolete_emails + (id == 'notinavail' ? [] : ["#{id}@apache.org"])).uniq
-    end
-  end
-
-  class Committee
-    # mailing list for this committee.  Generally returns the first name in
-    # the dns (e.g. whimsical).  If so, it can be prefixed by a number of
-    # list names (e.g. dev, private) and <tt>.apache.org</tt> is to be
-    # appended.  In some cases, the name contains an <tt>@</tt> sign and
-    # is the full name for the mail list.
-    def mail_list
-      case name.downcase
-      when 'comdev'
-        'community'
-      when 'httpcomponents'
-        'hc'
-      when 'whimsy'
-        'whimsical'
-
-      when 'brandmanagement'
-        'trademarks@apache.org'
-      when 'infrastructure'
-        'infra'
-      when 'dataprivacy'
-        'privacy@apache.org'
-      when 'legalaffairs'
-        'legal-internal@apache.org'
-      when 'fundraising'
-        'fundraising-private@apache.org'
-      when 'marketingandpublicity'
-        'press@apache.org'
-      when 'tac'
-        'travel-assistance@apache.org'
-      when 'w3crelations'
-        'w3c@apache.org'
-      when 'concom'
-        'planners@apachecon.com'
-      else
-        name.downcase
-      end
-    end
-  end
-
-  class Podling
-    # base name used in constructing mailing list name.
-    def mail_list
-      case name.downcase
-      when 'odftoolkit'
-        'odf'
-      else
-        name.downcase
-      end
     end
   end
 

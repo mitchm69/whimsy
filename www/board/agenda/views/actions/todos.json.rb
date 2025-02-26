@@ -135,7 +135,7 @@ if @establish and env.password
       # update ci.yaml
       cinfoy = File.join(ASF::SVN['board'], 'committee-info.yaml')
       ASF::SVN.update cinfoy, title, env, _ do |_tmpdir, contents|
-        ASF::Committee.appendtlpmetadata(contents, pmc.downcase, charter)
+        ASF::Committee.appendtlpmetadata(contents, pmc.downcase, charter, date_established)
       end
     end
   end
@@ -181,7 +181,7 @@ if (@change || @establish) and env.password
   unless people.empty?
     # add new chairs to pmc-chairs
     ASF::LDAP.bind(env.user, env.password) do
-      chairs.add people - chairs.members
+      chairs.add people
     end
 
     # send out congratulations email
@@ -196,13 +196,13 @@ if (@change || @establish) and env.password
 
       cc 'Apache Board <board@apache.org>'
 
-      subject "Congratulations on your new role at Apache"
+      subject 'Congratulations on your new role at Apache - next steps'
 
-      body "Dear new PMC chairs,\n\nCongratulations on your new role at " +
-      "Apache. I've changed your LDAP privileges to reflect your new " +
-      "status.\n\nPlease read this and update the foundation records:\n" +
-      ASF::SVN.svnpath!('officers', 'advice-for-new-pmc-chairs.txt') +
-      "\n\nWarm regards,\n\n#{sender.public_name}"
+      body "Dear newly-appointed PMC Chair(s),\n\n" +
+      "Congratulations on being appointed by the board as a project VP and Chair of your PMC!\n\n" +
+      "Please read the following list of required to-dos for new Chairs, which includes key links to all the duties and responsibilities of being a Chair.\n\n" +
+      '  https://apache.org/dev/pmc-chair' +
+      "\n\nWarm regards,\n\n#{sender.public_name}\nOn Behalf of the ASF Board"
     end
 
     mail.deliver!

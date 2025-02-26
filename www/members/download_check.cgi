@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
-PAGETITLE = "ASF Download Page Checker - BETA"
+PAGETITLE = "ASF Download Page Checker - BETA" # Wvisible:sites
+# Note: PAGETITLE must be double quoted
+
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 require 'wunderbar'
 require 'wunderbar/bootstrap'
@@ -12,9 +14,9 @@ _html do
       title: PAGETITLE,
       related: {
         'https://www.apache.org/legal/release-policy.html#release-announcements' => 'Release announcements',
-        'https://www.apache.org/dev/release-distribution#download-links' => 'Download links and cryptographic files',
-        'https://www.apache.org/dev/release-download-pages.html#download-page' => 'KEYS file and download verification',
-        'https://www.apache.org/dev/release-distribution#sigs-and-sums' => 'MD5 and SHA1 are deprecated',
+        'https://infra.apache.org/release-distribution.html#download-links' => 'Download links and cryptographic files',
+        'https://infra.apache.org/release-download-pages.html#download-page' => 'KEYS file and download verification',
+        'https://infra.apache.org/release-distribution.html#sigs-and-sums' => 'MD5 and SHA1 are deprecated',
       },
       helpblock: -> {
         _p do

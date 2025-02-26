@@ -10,6 +10,8 @@
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 require 'whimsy/asf'
 require 'json'
+require 'stringio'
+require 'whimsy/asf/json-utils'
 
 require 'open3'
 require 'wunderbar'
@@ -42,6 +44,12 @@ end
 
 def new?
   return @changed == ChangeStatus::NEW
+end
+
+# Time to check for discrepancies?
+def check_now?
+  # Check for discrepancies from time to time regardless
+  return ([11, 23].include?(Time.now.hour) or (changed? and @old_file))
 end
 
 # Pretty-prints the JSON input and writes it to the output.
@@ -123,6 +131,15 @@ def write_output(file, results)
 
     if File.exist?(file)
       @changed = ChangeStatus::CHANGED
+      # Note: we reparse results rather than trying to use the original json
+      # to esure consistency with the file settings re: symbols etc
+      begin
+        jsonout = StringIO.new
+        ASFJSON.compare_json(JSON.parse(@old_file), JSON.parse(results),jsonout)
+        sendMail("JSON changes in #{file}", jsonout.string)
+      rescue StandardError => e
+        Wunderbar.warn "Failed trying to compare JSON: #{e}"
+      end
     else
       @changed = ChangeStatus::NEW
     end

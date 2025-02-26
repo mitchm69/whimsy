@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-PAGETITLE = "Active Members not participating in meetings" # Wvisible:meeting
+PAGETITLE = "Active Members not participating in recent meetings" # Wvisible:meeting
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 
 require 'whimsy/asf'
@@ -7,31 +7,31 @@ require 'wunderbar/bootstrap'
 require 'date'
 require 'json'
 require 'wunderbar/jquery/stupidtable'
-require_relative 'meeting-util'
+require 'whimsy/asf/meeting-util'
 
 # Find latest meeting and check if it's in the future yet
 MEETINGS = ASF::SVN['Meetings']
-cur_mtg_dir = MeetingUtil.get_latest(MEETINGS)
+cur_mtg_dir = ASF::MeetingUtil.get_latest(MEETINGS)
 meeting = File.basename(cur_mtg_dir)
 today = Date.today.strftime('%Y%m%d')
-
-# look for recent activity if there is an upcoming meeting
-if meeting > today
-  current_status = MeetingUtil.current_status(cur_mtg_dir)
-else
-  current_status = lambda {'No response'}
-end
 
 # separator / is added when link is generated
 ROSTER = "/roster/committer"
 if not ENV['QUERY_STRING'] or ENV['QUERY_STRING'].include? 'json'
-  ENV['HTTP_ACCEPT'] = 'application/json' 
+  ENV['HTTP_ACCEPT'] = 'application/json'
 end
 
 # produce HTML
 _html do
+  @meetingsMissed = (@meetingsMissed || 3).to_i
   _body? do
-    attendance, matrix, dates, nameMap = MeetingUtil.get_attend_matrices(MEETINGS)
+    # look for recent activity if there is an upcoming meeting
+    if meeting > today
+      current_status = ASF::MeetingUtil.current_status(cur_mtg_dir)
+    else
+      current_status = lambda {|id| 'No response'}
+    end
+    attendance, matrix, dates, nameMap = ASF::MeetingUtil.get_attend_matrices(MEETINGS)
     _whimsy_body(
       title: PAGETITLE,
       subtitle: 'Select A Date:',
@@ -46,7 +46,7 @@ _html do
       },
       helpblock: -> {
         _form_ do
-          _span "List of members that have not participated, starting with the "
+          _span "List of members that have not participated recently, starting with the "
           _select name: 'meetingsMissed', onChange: 'this.form.submit()' do
             dates.reverse.each_with_index do |name, i|
               _option name, value: i+1, selected: (i+1 == @meetingsMissed.to_i)
@@ -65,7 +65,6 @@ _html do
         end
       }
     ) do
-    @meetingsMissed = (@meetingsMissed || 3).to_i
     count = 0
     _table.table.table_hover do
       _thead do
@@ -83,6 +82,10 @@ _html do
         next unless id
 
         if missed >= @meetingsMissed
+          count += 1
+          status = current_status[id]
+          next if @status and status != @status
+
           _tr_ do
             _td! {_a nameMap[id], href: "#{ROSTER}/#{id}"}
             _td dates[-first-1] || dates.first
@@ -93,10 +96,9 @@ _html do
             end
 
             if meeting > today
-              _td current_status[id]
+              _td status
             end
           end
-          count += 1
         end
       end
     end
@@ -126,13 +128,6 @@ _html do
 end
 
 _json do
-  meetingsMissed = (@meetingsMissed || 3).to_i
-  _attendance, matrix, _dates, _nameMap = MeetingUtil.get_attend_matrices(MEETINGS)
-  inactive = matrix.select do |id, _name, _first, missed|
-    id and missed >= meetingsMissed
-  end
-
-  Hash[inactive.map {|id, name, _first, missed|
-    [id, {name: name, missed: missed, status: current_status[id]}]
-    }]
+  ASF::MeetingUtil.tracker((@meetingsMissed || 3).to_i).
+    select {|id, info| info['status'] == @status || @status == nil}.to_h
 end

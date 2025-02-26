@@ -19,8 +19,9 @@ _html do
     _whimsy_body(
       title: PAGETITLE,
       related: {
-        '/members/memberless-pmcs' => 'PMCs with no/few ASF Members',
-        '/members/nominations' => 'Members Meeting Nomination Crosscheck',
+        '/members/memberless-pmcs.cgi' => 'PMCs with no/few ASF Members',
+        '/members/nominate_member.cgi' => 'Nominate someone for ASF Member',
+        '/members/check_membernoms.cgi' => 'Cross-check existing New Member Nominations',
         ASF::SVN.svnpath!('Meetings') => 'Official Meeting Agenda Directory'
       },
       helpblock: -> {
@@ -32,7 +33,7 @@ _html do
       watch_list = ASF::Person.member_watch_list.keys
       meeting = ASF::MemberFiles.latest_meeting
 
-      nominations = ASF::MemberFiles.member_nominees.map {|k, _v| k}
+      nominations = ASF::MemberFiles.member_nominees.keys
 
       # determine which list to report on, based on the URI
       request = ENV['REQUEST_URI']
@@ -45,7 +46,7 @@ _html do
               _ul do
                 if Time.new.strftime('%Y%m%d') < File.basename(meeting)
                   _li do
-                    _a 'Posted nominations vs svn', href: 'members/nominations'
+                    _a 'Cross-check existing New Member nominations', href: '/members/check_membernoms.cgi'
                   end
                 else
                   unless request =~ /appstatus/
@@ -55,8 +56,10 @@ _html do
                   end
                 end
 
-                _li do
-                  _a 'Potential Member Watch List', href: 'members/watch'
+                if request =~ %r{/watch/\w} # only show main link for a sub-page
+                  _li do
+                    _a 'Potential Member Watch List', href: 'members/watch'
+                  end
                 end
 
                 unless request =~ /nominees/
@@ -112,13 +115,19 @@ _html do
         list -= ASF.members
       elsif request =~ /nominees/
         _h2_ 'Member Nominees'
-        list = nominations.uniq.map {|id| ASF::Person.find(id)}
+        # Keep only ids that are not current members
+        list = nominations.map {|id| ASF::Person.find(id)}.reject{|p| p.asf_member_status == :current}
       elsif request =~ /appstatus/
         _h2_ 'Elected Members - Application Status'
         status = File.read(File.join(meeting, 'memapp-received.txt')).
           scan(/^(yes|no)\s+(yes|no)\s+(yes|no)\s+(yes|no)\s+(\w+)\s/)
         status = status.map {|tokens| [tokens.pop, tokens]}.to_h
         list = status.keys.map {|id| ASF::Person.find(id)}
+        _p do
+          applied = status.filter_map {|k, v| list.find{|p| p.name == k}.public_name.to_s if v[1] == 'yes' }
+          _ "Applied: (#{applied.size}) "
+          _ applied.sort.join(', ')
+        end
       else
         _h2_ 'From potential-member-watch-list.txt'
         list = watch_list
@@ -199,9 +208,14 @@ _html do
               # ASF id
               if person.id =~ /^notinavail_\d+$/
                 _td
-              elsif person.asf_member?
+              elsif person.asf_member_status == :current
                 _td! do
                   _strong {_a person.id, href: "roster/committer/#{person.id}"}
+                end
+              elsif person.asf_member_status == :emeritus
+                _td! do
+                  _strong {_a person.id, href: "roster/committer/#{person.id}"}
+                  _ ' (emeritus)'
                 end
               else
                 _td! {_a person.id, href: "roster/committer/#{person.id}"}

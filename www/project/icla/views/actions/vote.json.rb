@@ -6,7 +6,7 @@ require 'mail'
 require 'whimsy/lockfile'
 
 # creates the vote phase JSON file
-# sends an email to the originator with the link 
+# sends an email to the originator with the link
 
 # Called from invite.js.rb POST
 # expects the following variables to be set:
@@ -45,7 +45,7 @@ if ASF::Person.find_by_email(@iclaemail)
 end
 
 begin
-  Socket.getaddrinfo(@iclaemail[/@(.*)/, 1].untaint, 'smtp')
+  Socket.getaddrinfo(@iclaemail[/@(.*)/, 1], 'smtp')
 rescue
   _error 'Invalid domain name in email address'
   _focus :iclaemail
@@ -54,7 +54,7 @@ end
 
 # create the vote object
 timestamp = Time.now.utc.to_s # need HMS in order to calculate accurate elapsed times
-date = timestamp[0..9] # keep only the date 
+date = timestamp[0..9] # keep only the date
 contributor = {:name => @iclaname, :email => @iclaemail}
 comment = @proposalText + "\n" + @voteComment
 votes = [{:vote =>'+1', :member => @proposer, :timestamp => timestamp, :comment => comment}]
@@ -75,7 +75,7 @@ token = pmc.name + '-' + date + '-' + Digest::MD5.hexdigest(@iclaemail)[0..5]
 file_name = '/srv/icla/' + token + '.json'
 
 # important not to overwrite any existing files
-err = LockFile.create_ex(file_name.untaint) do |f|
+err = LockFile.create_ex(file_name) do |f|
   f.write(JSON.pretty_generate(discussion))
 end
 if err
@@ -90,7 +90,7 @@ end
 
 # add user and pmc emails to the response
 _userEmail "#{user.public_name} <#{user.mail.first}>" if user
-_pmcEmail "private@#{pmc.mail_list}.apache.org" if pmc
+_pmcEmail pmc.private_mail_list if pmc
 
 path = Pathname.new(env['REQUEST_URI']) + "../../?token=#{token}"
 scheme = env['rack.url_scheme'] || 'https'
@@ -104,7 +104,7 @@ Use this link to vote:
 # create the email to the user
 mail = Mail.new do
   to user_email
-  from user_email.untaint
+  from user_email
   subject subject
   text_part do
     body body_text

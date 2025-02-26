@@ -1,7 +1,6 @@
 require 'nokogiri'
 require 'date'
 require 'psych'
-require_relative '../asf'
 
 module ASF
 
@@ -32,9 +31,6 @@ module ASF
     # userid of the champion, from podlings.xml
     attr_accessor  :champion
 
-    # list of months in the normal reporting schedule for this podling.
-    attr_accessor  :reporting
-
     # if reporting monthly, a list of months reports are expected.  Can also
     # ge <tt>nil</tt> or an empty list.  From podlings.xml.
     attr_accessor  :monthly
@@ -54,8 +50,12 @@ module ASF
     # <resolution url="">, from podlings.xml
     attr_accessor  :resolutionURL
 
+    # <resolution tlp="">, from podlings.xml
+    attr_accessor  :resolutionTLP
+
     # create a podling from a Nokogiri node built from podlings.xml
     def initialize(node)
+      @mtime = nil
       @name = node['name']
       @resource = node['resource']
       # Validate resource for later use resource can contain '-' and '.' (lucene.net)
@@ -71,11 +71,19 @@ module ASF
       @mentors = node.search('mentor').map { |mentor| mentor['username'] }
       @champion = node.at('champion')['availid'] if node.at('champion')
 
-      @reporting = node.at('reporting') if node.at('reporting')
-      @monthly = @reporting.text.split(/,\s*/) if @reporting&.text
+      @reporting = node.at('reporting') || nil # ensure variable is defined
+      @monthly = @reporting&.text&.split(/,\s*/)
 
-      @resolutionLink = node.at('resolution')['link'] if node.at('resolution')
-      @resolutionURL = node.at('resolution')['url'] if node.at('resolution')
+      res = node.at('resolution')
+      if res
+        @resolutionLink = res.attr('link')
+        @resolutionURL = res.attr('url')
+        @resolutionTLP = res.attr('tlp')
+      else
+        @resolutionLink = nil
+        @resolutionURL = nil
+        @resolutionTLP = nil
+      end
 
       # Note: the following optional elements are not currently processed:
       # - resolution (except for resolution/@link)
@@ -120,9 +128,9 @@ module ASF
 
     # date this podling was accepted for incubation
     def startdate
-      return unless @startdate
+      return unless @startdate and @startdate.length >= 7 # "YYYY-MM"
       # assume 15th (mid-month) if no day specified
-      return Date.parse("#@startdate-15") if @startdate.length < 8
+      return Date.parse("#{@startdate}-15") if @startdate.length == 7
       Date.parse(@startdate)
     rescue ArgumentError
       nil
@@ -131,9 +139,9 @@ module ASF
     # date this podling either retired or graduated.  <tt>nil</tt> for
     # current podlings.
     def enddate
-      return unless @enddate
+      return unless @enddate and @enddate.length >= 7
       # assume 15th (mid-month) if no day specified
-      return Date.parse("#@enddate-15") if @enddate.length < 8
+      return Date.parse("#{@enddate}-15") if @enddate.length == 7
       Date.parse(@enddate)
     rescue ArgumentError
       nil
@@ -277,6 +285,16 @@ module ASF
       ASF::Project.find(id).hasLDAP?
     end
 
+    # base name used in constructing mailing list name.
+    def mail_list
+      case name.downcase
+      when 'odftoolkit'
+        'odf'
+      else
+        name.downcase
+      end
+    end
+
     # development mailing list associated with a given podling
     def dev_mail_list
       case name
@@ -326,22 +344,22 @@ module ASF
       if File.exist?(resource_yml)
         rawYaml = Psych.load_file(resource_yml, permitted_classes: [Date, Symbol])
         hash = { }
-        hash[:sga] = rawYaml[:sga].strftime('%Y-%m-%d') if rawYaml[:sga]
-        hash[:asfCopyright] = rawYaml[:asfCopyright].strftime('%Y-%m-%d') if rawYaml[:asfCopyright]
-        hash[:distributionRights] = rawYaml[:distributionRights].strftime('%Y-%m-%d') if rawYaml[:distributionRights]
-        hash[:ipClearance] = rawYaml[:ipClearance].strftime('%Y-%m-%d') if rawYaml[:ipClearance]
+        hash[:sga] = rawYaml[:sga].strftime('%Y-%m-%d') if rawYaml[:sga]&.class == Date
+        hash[:asfCopyright] = rawYaml[:asfCopyright].strftime('%Y-%m-%d') if rawYaml[:asfCopyright]&.class == Date
+        hash[:distributionRights] = rawYaml[:distributionRights].strftime('%Y-%m-%d') if rawYaml[:distributionRights]&.class == Date
+        hash[:ipClearance] = rawYaml[:ipClearance].strftime('%Y-%m-%d') if rawYaml[:ipClearance]&.class == Date
         hash[:sourceControl] = rawYaml[:sourceControl]
         hash[:wiki] = rawYaml[:wiki]
         hash[:jira] = rawYaml[:jira]
         hash[:proposal] = rawYaml[:proposal]
         hash[:website] = rawYaml[:website]
         hash[:news] = []
-        for ni in rawYaml[:news]
+        rawYaml[:news]&.each do |ni|
           newsItem = {}
-          newsItem[:date] = ni[:date].strftime('%Y-%m-%d')
+          newsItem[:date] = ni[:date].strftime('%Y-%m-%d') if ni[:date]&.class == Date
           newsItem[:note] = ni[:note]
           hash[:news].push(newsItem)
-        end if rawYaml[:news]
+        end
         hash
       else
         {news: [], website: "http://#{self.resource}.incubator.apache.org"}
@@ -375,8 +393,8 @@ module ASF
         hash[:reporting][:text] = r.text if r.text.length > 0
         hash[:reporting][:monthly] = r.text.split(/,\s*/) if r['monthly']
         hash[:reporting][:schedule] = self.schedule
-      else
-        hash[:reporting] = r if r
+      elsif r
+        hash[:reporting] = r
       end
 
       hash[:resource] = resource
@@ -387,6 +405,7 @@ module ASF
       hash[:podlingStatus] = podlingStatus
       hash[:resolutionLink] = resolutionLink if resolutionLink
       hash[:resolutionURL] = resolutionURL if resolutionURL
+      hash[:resolutionTLP] = resolutionTLP if resolutionTLP
       hash
     end
 
@@ -429,10 +448,10 @@ module ASF
         begin
           res = Net::HTTP.get_response(URI(query))
           res.value() # Raises error if not OK
-          file = File.new(cache, "wb") # Allow for non-UTF-8 chars
+          file = File.new(cache, 'wb') # Allow for non-UTF-8 chars
           file.write res.body
-        rescue => e
-          Wunderbar.warn "ASF::Podling.namesearch: " + e.message
+        rescue StandardError => e
+          Wunderbar.warn 'ASF::Podling.namesearch: ' + e.message
           FileUtils.touch cache # Don't try again for a while
         end
       end

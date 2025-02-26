@@ -14,6 +14,7 @@ module ASF
     # Convert non-ASCII characters to equivalent ASCII
     # optionally: replace any remaining non-word characters (e.g. '.' and space) with '-'
     def self.asciize(name, nonWord = '-')
+      # Should agree with asciize.js.rb
       if name.match %r{[^\x00-\x7F]} # at least one non-ASCII character present
         # digraphs.  May be culturally sensitive
         # Note that the combining accents require matching two characters
@@ -79,7 +80,7 @@ module ASF
         name.gsub! %r{[\u0143\u0145\u0147]}, 'N'
         name.gsub! %r{[\u0144\u0146\u0148\u0149]}, 'n'
         name.gsub! %r{[\u014C\u014E\u0150]}, 'O'
-        name.gsub! %r{[\u014D\u014F\u0151]}, 'o'
+        name.gsub! %r{[\u014D\u014F\u0151\u01A1]}, 'o'
         name.gsub! %r{[\u0152]}, 'OE'
         name.gsub! %r{[\u0153]}, 'oe'
         name.gsub! %r{[\u0154\u0156\u0158]}, 'R'
@@ -89,7 +90,7 @@ module ASF
         name.gsub! %r{[\u0162\u0164\u0166]}, 'T'
         name.gsub! %r{[\u0163\u0165\u0167]}, 't'
         name.gsub! %r{[\u0168\u016A\u016C\u016E\u0170\u0172]}, 'U'
-        name.gsub! %r{[\u0169\u016B\u016D\u016F\u0171\u0173]}, 'u'
+        name.gsub! %r{[\u0169\u016B\u016D\u016F\u0171\u0173\u01B0]}, 'u'
         name.gsub! %r{[\u0174]}, 'W'
         name.gsub! %r{[\u0175]}, 'w'
         name.gsub! %r{[\u0176\u0178]}, 'Y'
@@ -167,9 +168,9 @@ module ASF
 
     # extract sn and givenName from cn (needed for LDAP entries)
     # returns sn, [givenName,...]
-    # Note that givenName is returned as an array (may be empty). 
+    # Note that givenName is returned as an array (may be empty).
     # This is because givenName is an optional attribute which may appear multiple times.
-    # It remains to be seen whether we want to create multiple attributes, 
+    # It remains to be seen whether we want to create multiple attributes,
     # or whether it is more appropriate to add at most one attribute
     # containing all the givenName values. [The array can be joined to produce a single value].
     # DRAFT version: not for general use yet
@@ -186,7 +187,7 @@ module ASF
 
     # Name equivalences
     names = [
-      %w(Alex Alexander Alexandru), 
+      %w(Alex Alexander Alexandru),
       %w(Andrew Andy),
       %w(William Bill),
       %w(Chris Christopher Christoph),
@@ -270,8 +271,27 @@ module ASF
     # Returns <tt>true</tt> if this person is listed as an ASF member in
     # _either_ LDAP or <tt>members.txt</tt> or this person is listed as
     # an PMC chair in LDAP.
-    def asf_officer_or_member?
+    def asf_chair_or_member?
       asf_member? or ASF.pmc_chairs.include? self
+    end
+
+    # Returns ASF membership status according to members.txt:
+    # <tt>:current</tt> if this person is listed as an ASF member
+    # <tt>:emeritus</tt> if this person is listed as an Emeritus ASF member
+    # <tt>:deceased</tt> if this person is listed as a Deceased ASF member
+    # <tt>nil</tt> otherwise (i.e. does not appear in members.txt)
+    def asf_member_status
+      ASF::Member.member_status name
+    end
+
+    # Is this person in the secretary team?
+    def secretary?
+      ASF::Service.find('asf-secretary').members.include? self
+    end
+
+    # Is this person in the treasurer team?
+    def treasurer?
+      ASF::AuthGroup.find('treasurer').members.include? self
     end
   end
 end

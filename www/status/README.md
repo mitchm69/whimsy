@@ -54,7 +54,7 @@ anchor id for the element for linking purposes).
 
 Internally, exceptions returned by a monitor are converted to a leaf node with
 a name of `exception`, a title containing the exception, and data consisting
-of a stack traceback. 
+of a stack traceback.
 
 Href
 ----
@@ -77,13 +77,13 @@ such items will show the GMT value of the time specified in ISO-8601 format.
 Control Flow
 ============
 
-Fetching the [https://whimsy-test.apache.org/status/](status) web page, which
+Fetching the [status](https://whimsy.apache.org/status/) web page, which
 can be done either by browsers or pings, results in a call to
 [index.cgi](https://github.com/apache/whimsy/blob/master/www/status/index.cgi).
 If it has been more than 60 seconds since the last status update, index.cgi
 will call
 [monitor.rb](https://github.com/apache/whimsy/blob/master/www/status/monitor.rb).
-Monitor.rb will load and then call each of the monitors defined in the
+StatusMonitor.rb will load and then call each of the monitors defined in the
 [monitors](https://github.com/apache/whimsy/tree/master/www/status/monitors)
 subdirectory.
 
@@ -114,8 +114,12 @@ The Apache Software Foundation infrastructure team uses
 status.  A dozen+ servers around the world check status regularly,
 and will report failure results to the infrastructure
 [Slack](https://the-asf.slack.com/) channel.  _Important:_ The Infrastructure
-team ensures the underlying VM is up; the Whimsy PMC is responsible for 
+team ensures the underlying VM is up; the Whimsy PMC is responsible for
 the server software running inside the VM.
+
+There are currently two Nodeping checks:
+- Public facing: this checks the status return from the public URL https://whimsy.apache.org/incubator/podlings/by-age; this gives[Public check results](https://nodeping.com/reports/statusevents/check/2018042000290QH9Q-OZZ2KBZC)
+- Full status: this checks the status return from https://whimsy.apache.org/status/; this gives [Status results](https://nodeping.com/reports/statusevents/check/2018042000290QH9Q-UMFGNACX)
 
 While the full status for whimsy is represented as a tree of nodes, each
 assigned one of our levels, and containing either child nodes or one or more

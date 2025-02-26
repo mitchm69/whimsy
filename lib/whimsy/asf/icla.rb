@@ -17,7 +17,7 @@ module ASF
     # public name for the individual; should match LDAP
     attr_accessor :name
 
-    # email address from the ICLA
+    # email address from the ICLA (may include multiple values, separated by space or comma)
     attr_accessor :email
 
     # lists the name of the form on file; includes claRef information
@@ -96,22 +96,35 @@ module ASF
       refresh
       unless @@email_index
         @@email_index = {}
-        each {|icla| @@email_index[icla.email.downcase] = icla}
+        # Allow for multiple emails separated by comma or space
+        each {|icla| icla.emails.each {|m| @@email_index[m.downcase] = icla}}
       end
 
       @@email_index[value.downcase]
     end
 
-    # find ICLA by name
-    def self.find_by_name(value)
+    # find ICLA by (public) name
+    # There are multiple entries with the same name.
+    # So if there are multiple matches, it does not make sense to return a single entry.
+    # By default, only return an entry if there is a single match. (else nil)
+    # If the multiple param is true, return an array of all matching entries.
+    # The array may be empty; does not return nil.
+    #
+    # N.B. matching by name is inherently inaccurate due to misspellings and duplicates.
+    # There are likely to be both false positives and false negatives. Use with caution!
+    def self.find_by_name(value, multiple=false)
       return unless SOURCE
       refresh
       unless @@name_index
-        @@name_index = {}
-        each {|icla| @@name_index[icla.name] = icla}
+        # Collect all the entries for each matching name
+        @@name_index = Hash.new {|h, k| h[k] = Array.new}
+        each {|icla| @@name_index[icla.name] << icla }
       end
 
-      @@name_index[value]
+      entries = @@name_index[value]
+      return entries if multiple # no filtering needed
+      return entries.first if entries&.size == 1
+      return nil
     end
 
     # find number of matches in target array
@@ -183,7 +196,7 @@ module ASF
     # if age > 0, return the entries added in the last n days
     def self.unlisted_name_by_email(age=0, env=nil)
       if age > 0
-        rev = "{%s}:HEAD" % (Date.today - age)
+        rev = '{%s}:HEAD' % (Date.today - age)
         diff, _err = ASF::SVN.svn('diff', SOURCE_URL, {revision: rev, env: env})
         raise _err unless diff
         return Hash[*diff.scan(/^[+]notinavail:.*?:(.*?):(.*?):Signed CLA/).flatten.reverse]
@@ -226,7 +239,7 @@ module ASF
     # list of mails rejected by badrcptto and badrcptto_patterns
     # Not intended for external use
     def self.badmails
-      qmc = ASF::SVN['qmail_control']
+      qmc = File.join(ASF::Config[:puppet_data], 'qmail_control')
       # non-patterns
       brt = File.join(qmc, 'badrcptto')
       badmails = File.read(brt).scan(/^(\w.+)@apache\.org\s*$/).flatten
@@ -262,7 +275,7 @@ module ASF
       @@availids_reserved = reserved.uniq
     end
 
-    # list of all availids that are are taken or reserved
+    # list of all availids that are taken or reserved
     # See also ASF::Mail.taken?
     def self.availids_taken
       self.availids_reserved + self.availids
@@ -285,6 +298,12 @@ module ASF
     def noId?
       self.id == 'notinavail'
     end
+
+    # return emails split by comma or space
+    def emails
+      email.split(/[, ]/)
+    end
+
   end
 
   class Person

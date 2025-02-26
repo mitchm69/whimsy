@@ -5,7 +5,7 @@
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 require 'wunderbar'
 require 'whimsy/asf'
-SCANDIR = "../www"
+SCANDIR = '../www'
 ISERR = '!'
 AUTHMAP = { # From whimsy-vm4.apache.org.yaml
   'ASF Committers' => 'text-muted',
@@ -16,7 +16,7 @@ AUTHMAP = { # From whimsy-vm4.apache.org.yaml
 }
 AUTHPUBLIC = 'glyphicon-eye-open'
 ASFSVN = /ASF::SVN/
-SCANDIRSVN = "../"
+SCANDIRSVN = '../'
 WWWAUTH = /WWW-Authenticate: Basic realm/
 CONSTANT_DEF = /(?<matchconst>[A-Z_]+)\s+=\s+['"](?<matchval>[^#]+)['"]/ # Attempt to capture CONSTANT = "value"
 
@@ -97,7 +97,7 @@ def get_auth
       loc = $1.gsub(/^\^/,'') # remove ^ prefix
     elsif l =~ %r{<Directory ([^>]+)>}
       # remove standard prefix and append '/' directory marker
-      loc = $1.sub('/x1/srv/whimsy/www','')+'/'
+      loc = $1.sub(%r{^(/x1)?/srv/whimsy/www},'')+'/'
     elsif l =~ %r{AuthName\s+"(.+)"} # generate the entry
       hash[loc] = $1 if loc
       loc = nil

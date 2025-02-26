@@ -10,7 +10,11 @@ module ASF
     def self.decode(env)
       class << env; attr_accessor :user, :password; end
 
-      auth = env['HTTP_AUTHORIZATION'] || ENV['HTTP_AUTHORIZATION']
+      if ENV['PASSENGER_APP_ENV']
+        auth = env['HTTP_AUTHORIZATION']
+      else # only use ENV if not a Passenger app
+        auth = ENV['HTTP_AUTHORIZATION']
+      end
 
       if auth.to_s.empty?
         env.user = env['REMOTE_USER'] || ENV['USER'] || Etc.getpwuid.name
@@ -30,7 +34,7 @@ module ASF
     class Committers < Rack::Auth::Basic
       # Specify 'ASF Committers' as the HTTP auth Realm
       def initialize(app)
-        super(app, "ASF Committers", &proc {})
+        super(app, 'ASF Committers', &proc {})
       end
 
       # Returns <tt>unauthorized</tt> unless running in test mode or
@@ -56,7 +60,7 @@ module ASF
     class MembersAndOfficers < Rack::Auth::Basic
       # Specify 'ASF Members and Officers' as the HTTP auth Realm
       def initialize(app, &block)
-        super(app, "ASF Members and Officers", &proc {})
+        super(app, 'ASF Members and Officers', &proc {})
         @block = block
       end
 
@@ -70,8 +74,7 @@ module ASF
 
         person = ASF::Auth.decode(env)
 
-        authorized ||= person.asf_member?
-        authorized ||= ASF.pmc_chairs.include? person
+        authorized ||= person.asf_chair_or_member?
         authorized ||= @block.call(env) if @block
 
         if authorized
@@ -201,7 +204,7 @@ module ASF
   end
 
   # compute document root for the site.  Needed by Rack/Passenger applications
-  # that wish to use support site wide assets (stylesheets, javascripts).
+  # that wish to use site wide assets (stylesheets, JavaScript).
   class DocumentRoot
     # capture the application
     def initialize(app)
@@ -209,7 +212,7 @@ module ASF
     end
 
     # compute the document root by stripping the <tt>PASSENGER_BASE_URI</tt> from
-    # the the current working directory.
+    # the current working directory.
     def call(env)
       if ENV['PASSENGER_BASE_URI'] and not ENV['DOCUMENT_ROOT']
         base = Dir.pwd
@@ -225,7 +228,7 @@ module ASF
 
   # Apache httpd on the original whimsy-vm was behind a proxy that converts
   # https requests into http requests.  Update the environment variables to
-  # match.  This middleware is likely now obsolte.
+  # match.  This middleware is likely now obsolete.
   class HTTPS_workarounds
     # capture the app
     def initialize(app)

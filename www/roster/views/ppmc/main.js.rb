@@ -34,23 +34,23 @@ class PPMC < Vue
 
     # add jump links to main sections of page using Bootstrap nav element
     _ul.nav.nav_pills do
-      _li role: "presentation" do
+      _li role: 'presentation' do
         _a 'PPMC', :href => "ppmc/#{@ppmc.id}#ppmc"
       end
-      _li role: "presentation" do
+      _li role: 'presentation' do
         _a 'Committers', :href => "ppmc/#{@ppmc.id}#committers"
       end
-      _li role: "presentation" do
+      _li role: 'presentation' do
         if @ppmc.moderators
           _a 'Mail List Info', :href => "ppmc/#{@ppmc.id}#mail"
         else
           _a 'Mail Lists', :href => "ppmc/#{@ppmc.id}#mail"
         end
       end
-      _li role: "presentation" do
+      _li role: 'presentation' do
         _a 'Reporting Schedule', :href => "ppmc/#{@ppmc.id}#reporting"
       end
-      _li role: "presentation" do
+      _li role: 'presentation' do
         _a 'Status', :href => "ppmc/#{@ppmc.id}#podlingStatus"
       end
     end
@@ -88,6 +88,11 @@ class PPMC < Vue
           _p do
             _br
             _ 'Note: to Add existing committers to the PPMC, please select the committer from the list below and use the Modify button instead.'
+            _br
+            _br
+            _ 'If the person does not yet have an ASF id, please use the '
+            _a 'Account Request Form', href: '/officers/acreq.cgi'
+            _br
             _br
             _ 'N.B. please ask the committer to subscribe themselves to the private list, for example by using the'
             _br
@@ -194,7 +199,7 @@ class PPMC < Vue
           _a 'podlings.xml', href: 'https://svn.apache.org/repos/asf/incubator/public/trunk/content/podlings.xml'
         end
         _li do
-          _a 'Individual status files', href: 'https://svn.apache.org/repos/asf/incubator/public/trunk/content/podlings/'
+          _a 'Podling status file', href: "https://svn.apache.org/repos/asf/incubator/public/trunk/content/podlings/#{@ppmc.id}.yml"
         end
       end
       _br
@@ -205,14 +210,14 @@ class PPMC < Vue
       _li do
         _a 'Podling Proposal', href: @ppmc.podlingStatus.proposal
       end if @ppmc.podlingStatus.proposal
-      _li "Status: " + @ppmc.status
+      _li 'Status: ' + @ppmc.status
       _li do
-        _ "Established: " + @ppmc.established
+        _ 'Established: ' + @ppmc.established
       end if @ppmc.established
       _li do
-        _ "End date: " + @ppmc.enddate
+        _ 'End date: ' + @ppmc.enddate
       end if @ppmc.enddate
-      _li "Incubating for "+@ppmc.duration+" days"
+      _li 'Incubating for '+@ppmc.duration+' days'
       _li do
         _a 'Prior Board Reports', href: '/board/minutes/' +
             @ppmc.display_name.gsub(/\s+/, '_')
@@ -222,10 +227,10 @@ class PPMC < Vue
     _h3 'Resources'
     _ul do
       _li do
-        _a "GitHub", href: 'https://github.com/apache?q=incubator-' + @ppmc.id, target: '_new'
+        _a 'GitHub', href: 'https://github.com/apache?q=incubator-' + @ppmc.id, target: '_new'
       end if @ppmc.podlingStatus.sourceControl == 'github'
       _li do
-        _a "Git Repositories", href: 'https://gitbox.apache.org/repos/asf?s=incubator-' + @ppmc.id, target: '_new'
+        _a 'Git Repositories', href: 'https://gitbox.apache.org/repos/asf?s=incubator-' + @ppmc.id, target: '_new'
       end if !@ppmc.podlingStatus.sourceControl || @ppmc.podlingStatus.sourceControl == 'git' || @ppmc.podlingStatus.sourceControl == 'asfgit'
       _li do
         _a 'https://issues.apache.org/jira/browse/' + @ppmc.podlingStatus.jira,href: 'https://issues.apache.org/jira/browse/' + @ppmc.podlingStatus.jira, target: '_new'
@@ -239,13 +244,24 @@ class PPMC < Vue
     _ul do
       if @ppmc.podlingStatus.ipClearance
         _li  'IP Clearance: '+ @ppmc.podlingStatus.ipClearance
+      else
+        _li.podlingWarning 'No IP Clearance Filed (or invalid ipClearance entry)'
       end
-      _li 'Software Grant Received on: '+@ppmc.podlingStatus.sga if @ppmc.podlingStatus.sga
-      _li.podlingWarning 'No Software Grant and No IP Clearance Filed' unless @ppmc.podlingStatus.sga || @ppmc.podlingStatus.ipClearance
-      _li 'Confirmation of ASF Copyright Headers on Source Code on: '+@ppmc.podlingStatus.asfCopyright if @ppmc.podlingStatus.asfCopyright
-      _li.podlingWarning 'No Release Yet/Missing ASF Copyright Headers on Source Code' unless @ppmc.podlingStatus.asfCopyright
-      _li 'Confirmation of Binary Distribution Licensing: '+@ppmc.podlingStatus.distributionRights if @ppmc.podlingStatus.distributionRights
-      _li.podlingWarning 'No Release Yet/Binary has licensing issues' unless @ppmc.podlingStatus.distributionRights
+      if @ppmc.podlingStatus.sga
+        _li 'Software Grant Received on: '+@ppmc.podlingStatus.sga
+      else
+        _li.podlingWarning 'No Software Grant Filed (or invalid sga entry)'
+      end
+      if @ppmc.podlingStatus.asfCopyright
+        _li 'Confirmation of ASF Copyright Headers on Source Code on: '+@ppmc.podlingStatus.asfCopyright
+      else
+        _li.podlingWarning 'No Release Yet/Missing ASF Copyright Headers on Source Code'
+      end
+      if @ppmc.podlingStatus.distributionRights
+        _li 'Confirmation of Binary Distribution Licensing: '+@ppmc.podlingStatus.distributionRights
+      else
+        _li.podlingWarning 'No Release Yet/Binary has licensing issues'
+      end
     end
 
     # reporting schedule
@@ -265,7 +281,7 @@ class PPMC < Vue
         _a "Podling name search (#{resolution})", href: 'https://issues.apache.org/jira/browse/' + @ppmc.namesearch.issue
       end if @ppmc.namesearch
       _li.podlingWarning do
-        _a "No Podling Name Search on file", href: 'https://incubator.apache.org/guides/names.html#name-search'
+        _a 'No Podling Name Search on file', href: 'https://incubator.apache.org/guides/names.html#name-search'
       end unless @ppmc.namesearch
       _li do
         _a @ppmc.display_name + ' Website', href: @ppmc.podlingStatus.website
@@ -322,7 +338,7 @@ class PPMC < Vue
     @disabled = true
     Polyfill.require(%w(Promise fetch)) do
       @create_disabled = true
-      fetch("actions/ppmc", args).then {|response|
+      fetch('actions/ppmc', args).then {|response|
         content_type = response.headers.get('content-type') || ''
         if response.status == 200 and content_type.include? 'json'
           response.json().then do |json|

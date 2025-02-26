@@ -20,21 +20,44 @@ require 'json'
 require 'time'
 require 'thread'
 
-class Monitor
+# for debugging purposes must include status
+if __FILE__ == $0
+  $LOAD_PATH.unshift '/srv/whimsy/lib'
+  require 'whimsy/asf/status'
+end
+
+class StatusMonitor
   # match http://getbootstrap.com/components/#alerts
   LEVELS = %w(success info warning danger fatal)
 
   attr_reader :status
+  attr_reader :timings # debug timings
+
+  def timediff(what)
+    now = Time.now
+    @timings << [what, now - @prev]
+    @prev = now
+  end
 
   def initialize(args = [])
+    @timings = []
+    @prev = Time.now
     status_file = File.expand_path('../status.json', __FILE__)
-    File.open(status_file, File::RDWR|File::CREAT, 0644) do |file|
+    File.open(status_file, File::RDWR|File::CREAT, 0644, encoding: Encoding::UTF_8) do |file|
+      timediff('open')
       # lock the file
       mtime = File.exist?(status_file) ? File.mtime(status_file) : Time.at(0)
       file.flock(File::LOCK_EX)
+      timediff('locked')
 
       # fetch previous status (using symbolic keys)
-      baseline = JSON.parse(file.read, {symbolize_names: true}) rescue {}
+      begin
+        baseline = JSON.parse(file.read, {symbolize_names: true})
+      rescue Exception => e
+        $stderr.puts "monitor: Failed to read status.json: #{e}"
+        baseline = {}
+      end
+      timediff('parsed')
       baseline[:data] = {} unless baseline[:data].instance_of? Hash
 
       # If status was updated while waiting for the lock, use the new status
@@ -43,16 +66,16 @@ class Monitor
         return
       end
 
+      timediff('before threads')
       # start each monitor in a separate thread
       threads = []
       self.class.singleton_methods.sort.each do |method|
         next if args.length > 0 and not args.include? method.to_s
-
         threads << Thread.new do
           begin
             # invoke method to determine current status
             previous = baseline[:data][method.to_sym] || {mtime: Time.at(0)}
-            status = Monitor.send(method, previous) || previous
+            status = StatusMonitor.send(method, previous) || previous
 
             # convert non-hashes in proper statuses
             if not status.instance_of? Hash
@@ -84,24 +107,32 @@ class Monitor
         end
       end
 
+      timediff('started threads')
       # collect status from each monitor thread
       newstatus = {}
       threads.each do |thread|
         thread.join
+        timediff(thread[:name])
         newstatus[thread[:name]] = thread[:status]
       end
 
+      timediff('after threads')
       # normalize status
-      @status = normalize(data: newstatus)
+      status = normalize(data: newstatus)
+      status[:mtime] = Time.now.gmtime.iso8601
+      @status = status
 
-      File.write(File.expand_path("../../logs/status.data", __FILE__),
+      timediff('normalized')
+      File.write(File.expand_path('../../logs/status.data', __FILE__),
         @status.inspect)
 
+      timediff('status.data')
       # update results
       file.rewind
       file.write JSON.pretty_generate(@status)
       file.flush
       file.truncate(file.pos)
+      timediff('status.json')
     end
   end
 
@@ -187,5 +218,5 @@ end
 
 # for debugging purposes
 if __FILE__ == $0
-  puts JSON.pretty_generate(Monitor.new(ARGV).status)
+  puts JSON.pretty_generate(StatusMonitor.new(ARGV).status)
 end

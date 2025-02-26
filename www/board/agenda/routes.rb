@@ -3,7 +3,6 @@
 #
 
 require 'whimsy/asf/status'
-UNAVAILABLE = Status.updates_disallowed_reason # are updates disallowed?
 
 # redirect root to latest agenda
 get '/' do
@@ -47,7 +46,7 @@ get '/whimsy.svg' do
     type: 'image/svg+xml'
 end
 
-# Progress Web App Manfest
+# Progress Web App Manifest
 get '/manifest.json' do
   @svgmtime = File.mtime(File.expand_path('../../../whimsy.svg', __FILE__)).to_i
   @pngmtime = File.mtime(File.expand_path('../public/whimsy.png', __FILE__)).to_i
@@ -188,7 +187,8 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/feedback.json} do |date|
 end
 
 post %r{/(\d\d\d\d-\d\d-\d\d)/feedback.json} do |date|
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   @agenda = "board_agenda_#{date.gsub('-', '_')}.txt"
   @dryrun = false
@@ -337,7 +337,8 @@ get '/json/posted-reports' do
 end
 
 post '/json/posted-reports' do
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   _json :"actions/posted-reports"
 end
@@ -354,7 +355,8 @@ end
 
 # posted actions
 post '/json/:file' do
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   _json :"actions/#{params[:file]}"
 end
@@ -389,12 +391,15 @@ get %r{/(\d\d\d\d-\d\d-\d\d).json} do |date|
 
       # filter list for non-PMC chairs and non-officers
       user = env.respond_to?(:user) && ASF::Person.find(env.user)
-      unless !user or user.asf_member? or ASF.pmc_chairs.include? user
+      unless !user or user.asf_chair_or_member?
         status 206 # Partial Content
         committees = user.committees.map(&:display_name)
         agenda = agenda.select {|item| committees.include? item['title']}
       end
 
+      # Add banner (or nil) to the first entry
+      # must always update the entry as they may be cached
+      agenda.first['banner'] = Status.banner
       agenda
     end
   ensure
@@ -440,7 +445,7 @@ end
 # get list of committers (for use in roll-call)
 get '/json/committers' do
   _json do
-    members = ASF.search_one(ASF::Group.base, "cn=member", 'memberUid').first
+    members = ASF.search_one(ASF::Group.base, 'cn=member', 'memberUid').first
     members = Hash[members.map {|name| [name, true]}]
     ASF.search_one(ASF::Person.base, 'uid=*', ['uid', 'cn']).
       map {|person| {id: person['uid'].first,
@@ -452,13 +457,15 @@ end
 
 # Secretary post-meeting todos
 get '/json/secretary-todos/:date' do
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   _json :'actions/todos'
 end
 
 post '/json/secretary-todos/:date' do
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   _json :'actions/todos'
 end
@@ -489,7 +496,7 @@ get '/json/historical-comments' do
   user = env.respond_to?(:user) && ASF::Person.find(env.user)
   comments = HistoricalComments.comments
 
-  unless !user or user.asf_member? or ASF.pmc_chairs.include? user
+  unless !user or user.asf_chair_or_member?
     status 206 # Partial Content
     committees = user.committees.map(&:display_name)
     comments = comments.select do |project, _list|
@@ -541,26 +548,36 @@ get '/new' do
   @next_month = next_month[/(.*#.*\n)+/] || ''
 
   # get potential actions
-  actions = JSON.parse(Wunderbar::JsonBuilder.new({}).instance_eval(
-    File.read("#{settings.views}/actions/potential-actions.json.rb"),
-  ).target!, symbolize_names: true)[:actions]
+  begin
+    actions = JSON.parse(Wunderbar::JsonBuilder.new({}).instance_eval(
+      File.read("#{settings.views}/actions/potential-actions.json.rb"),
+    ).target!, symbolize_names: true)[:actions]
+  rescue IOError => e
+    Wunderbar.warn "#{e}, could not access previous actions, continuing"
+    actions = nil
+  end
 
   # Get directors, list of pmcs due to report, and shepherds
   @directors = ASF::Board.directors
   @pmcs = ASF::Board.reporting(@meeting)
   @owner = ASF::Board::ShepherdStream.new(actions)
 
-  # Get list of unpublished and unapproved minutes
-  draft = YAML.load_file(Dir["#{AGENDA_WORK}/board_minutes*.yml"].max)
-  @minutes = dir("board_agenda_*.txt").
+  # Get list of unpublished and unapproved minutes (used by the agenda template)
+  latest = Dir["#{AGENDA_WORK}/board_minutes*.yml"].max
+  if latest
+    draft = YAML.load_file(latest)
+  else
+    draft = {} # allow for missing yml file
+  end
+  @minutes = dir('board_agenda_*.txt').
     map {|file| Date.parse(file[/\d[_\d]+/].gsub('_', '-'))}.
     reject {|date| date >= @meeting.to_date}.
     reject {|date| draft[date.strftime('%B %d, %Y')] == 'approved'}.
     sort
 
   template = File.join(ASF::SVN['foundation_board'], 'templates', 'board_agenda.erb')
-  @disabled = dir("board_agenda_*.txt").
-    include? @meeting.strftime("board_agenda_%Y_%m_%d.txt")
+  @disabled = dir('board_agenda_*.txt').
+    include? @meeting.strftime('board_agenda_%Y_%m_%d.txt')
 
   begin
     @agenda = Erubis::Eruby.new(IO.read(template)).result(binding)
@@ -576,7 +593,8 @@ end
 
 # post a new agenda
 post %r{/(\d\d\d\d-\d\d-\d\d)/} do |date|
-  return [503, UNAVAILABLE] if UNAVAILABLE
+  unavailable = Status.updates_disallowed_reason # are updates disallowed?
+  return [503, unavailable] if unavailable
 
   boardurl = ASF::SVN.svnurl('foundation_board')
   agenda = "board_agenda_#{date.gsub('-', '_')}.txt"
@@ -585,21 +603,56 @@ post %r{/(\d\d\d\d-\d\d-\d\d)/} do |date|
 
   Dir.mktmpdir do |dir|
 
-    ASF::SVN.svn('checkout', [boardurl, dir], {depth: 'empty', env: env})
+    ASF::SVN.svn!('checkout', [boardurl, dir], {depth: 'empty', env: env})
 
     agendapath = File.join(dir, agenda)
     File.write agendapath, contents
-    ASF::SVN.svn('add', agendapath)
+    ASF::SVN.svn!('add', agendapath)
 
     currentpath = File.join(dir, 'current.txt')
-    ASF::SVN.svn('update', currentpath, {env: env})
+    ASF::SVN.svn!('update', currentpath, {env: env})
 
-    File.unlink currentpath
-    File.symlink agenda, currentpath
+    if File.symlink? currentpath # Does the symlink exist?
+      File.unlink currentpath
+      File.symlink agenda, currentpath
+    else
+      Wunderbar.warn 'current.txt link does not exist, creating it'
+      File.symlink agenda, currentpath
+      ASF::SVN.svn!('add', currentpath)
+    end
 
-    ASF::SVN.svn('commit', [agendapath, currentpath], {msg: "Post #{date} agenda", env: env})
+    ASF::SVN.svn!('commit', [agendapath, currentpath], {msg: "Post #{date} agenda", env: env})
     Agenda.update_cache agenda, agendapath, contents, false
   end
 
+  auto_remind(date, agenda)
+
   redirect to("/#{date}/")
+end
+
+get %r{/testautoremind/(\d\d\d\d-\d\d-\d\d)/} do |date|
+    agenda = "board_agenda_#{date.gsub('-', '_')}.txt"
+    @dryrun = !Status.testnode? # For debug only!
+    _json auto_remind(date, agenda)
+end
+
+# Code to send initial reminders
+def auto_remind(date, agenda)
+  # draft reminder text
+  @reminder = 'reminder1' # reminder template
+  @tzlink = ASF::Board.tzlink(ASF::Board::TIMEZONE.utc_to_local(ASF::Board.nextMeeting))
+  reminder = eval(File.read('views/actions/reminder-text.json.rb'))
+
+  # extract data
+  @subject = reminder[:subject]
+  @message = reminder[:body]
+
+  # send reminders and summary
+  @summary = 'reminder-summary' # template name
+  @sendsummary = true
+  @agenda = agenda
+  @meeting = date
+  boardchair = ASF::Committee.officers.select{|h| h.name == 'boardchair'}.first.chairs.first[:name]
+  @from = "\"#{boardchair}\" <board-chair@apache.org>"
+  eval(File.read('views/actions/send-reminders.json.rb'))
 end

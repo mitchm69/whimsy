@@ -74,11 +74,10 @@ class Committer
 
     response[:urls] = person.urls unless person.urls.empty?
 
-    response[:committees] = person.committees.map(&:name)
-
     response[:groups] = person.services
-    response[:committer] = []
-    response[:podlings] = []
+    response[:committer] = [] # PMC committers
+    response[:committees] = [] # PMC owners
+    response[:podlings] = [] # podling owner or committer
     pmcs = ASF::Committee.pmcs
     pmc_names = pmcs.map(&:name) # From CI
     podlings = ASF::Podling.current.map(&:id)
@@ -90,14 +89,22 @@ class Committer
       end
     end
 
+    # Get project(owner) details
+    person.project_owners.map(&:name).each do |project|
+      if pmc_names.include? project
+        response[:committees] << project
+      elsif podlings.include? project
+        response[:podlings] << project
+      else
+        # TODO should this populate anything?
+      end
+    end
+
     # Get project(member) details
     person.projects.map(&:name).each do |project|
       if pmc_names.include? project
-          # Don't show committer karma if person has committee karma
-          unless response[:committees].include? project
-            # LDAP project group
-            response[:committer] << project
-          end
+        # LDAP project group
+        response[:committer] << project
       elsif podlings.include? project
         response[:podlings] << project
       else
@@ -117,6 +124,10 @@ class Committer
     response[:groups].sort!
     response[:committer].sort!
     response[:podlings].sort!
+    response[:committees].uniq!
+    response[:groups].uniq!
+    response[:committer].uniq!
+    response[:podlings].uniq!
 
     member = {} # collect member info
 
@@ -131,10 +142,11 @@ class Committer
 
     if auth[:member] # i.e. member karma
 
-      if person.icla and person.icla.claRef and (auth[:secretary] or auth[:root]) # Not all people have iclas (only check if secretary or root role)
+      if person.icla&.claRef and (auth[:secretary] or auth[:root]) # Not all people have iclas (only check if secretary or root role)
+        ASF::ICLAFiles.update_cache(env)
         file = ASF::ICLAFiles.match_claRef(person.icla.claRef)  # must be secretary or root
         if file
-          url =ASF::SVN.svnurl('iclas')
+          url = ASF::SVN.svnurl('iclas')
           response[:forms][:icla] = "#{url}/#{file}"
         end
       end
@@ -144,6 +156,7 @@ class Committer
         member[:info] = person.members_txt
 
         if person.icla # not all members have iclas
+          ASF::MemApps.update_cache(env)
           file = ASF::MemApps.find1st(person)
           if file
             url = ASF::SVN.svnurl('member_apps')
@@ -175,6 +188,14 @@ class Committer
           response[:forms][:emeritus_reinstated] = ASF::EmeritusReinstatedFiles.svnpath!(file)
         end
 
+        if auth[:secretary]
+          path, _name, _timestamp, epoch = ASF::WithdrawalRequestFiles.findpath(person.id, env, true)
+          if path
+            response[:forms][:withdrawal_request] = path
+            # Calculate the age in days
+            response[:withdrawal_request_age] = (((Time.now.to_i - epoch).to_f/SECS_TO_DAYS)).round(1).to_s
+          end
+        end
       else
         if person.member_nomination
           member[:nomination] = person.member_nomination
@@ -182,7 +203,7 @@ class Committer
       end
 
     else # not an ASF member; no karma for ICLA docs so don't add link
-      response[:forms][:icla] = '' if person.icla and person.icla.claRef
+      response[:forms][:icla] = '' if person.icla&.claRef
     end
 
     response[:member] = member unless member.empty?
@@ -211,9 +232,12 @@ class Committer
       response[:chairOf] << cttee if chairs.include?(id)
       # mailing list info is not public ...
       if response[:subscriptions] # did we get access to the mail?
-        pmail = "private@#{pmc.mail_list}.apache.org" rescue ''
+        pmail = pmc.private_mail_list rescue ''
         subbed = false
-        response[:subscriptions].each do |sub|
+        subs = response[:subscriptions]
+        digs = response[:digests]
+        subs += digs if digs
+        subs.each do |sub|
           if sub[0] == pmail
             subbed = true
           end
@@ -230,6 +254,7 @@ class Committer
       response[:chairOf] << pmc.name if pmc.chairs.map{|ch| ch[:id]}.include?(person.id)
     end
     response[:pmcs].sort!
+    response[:pmcs].uniq!
 
     response[:nonPMCchairOf] = [] # use separate list to avoid missing pmc-chair warnings
     nonpmcs = ASF::Committee.nonpmcs
@@ -238,6 +263,7 @@ class Committer
       response[:nonPMCchairOf] << nonpmc.name if nonpmc.chairs.map{|ch| ch[:id]}.include?(person.id)
     end
     response[:nonpmcs].sort!
+    response[:nonpmcs].uniq!
 
     response
   end

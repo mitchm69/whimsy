@@ -2,7 +2,6 @@
 $LOAD_PATH.unshift '/srv/whimsy/lib'
 
 require 'whimsy/asf'
-require 'date'
 require 'builder'
 require 'ostruct'
 require 'nokogiri'
@@ -42,16 +41,20 @@ force = ARGV.delete '--force' # rerun regardless
 
 NOSTAMP = ARGV.delete '--nostamp' # don't add dynamic timestamp to pages (for debug compares)
 
-DUMP_AGENDA = ARGV.delete '--dump_agenda' # output agenda details
+NOWARN_LAYOUT = ARGV.delete '--nowarn_layout' # don't add layout change warning to pages (for debug compares)
 
-STAMP = (NOSTAMP ? DateTime.new(1970) :  DateTime.now).strftime '%Y-%m-%d %H:%M'
+DUMP_AGENDA = ARGV.delete '--dump_agenda' # output agenda details to stdout
+
+DUMP_PENDING = ARGV.delete '--dump_pending' # output agenda details to stdout
+
+STAMP = (NOSTAMP ? Time.new(1970) :  Time.now).strftime '%Y-%m-%d %H:%M'
 
 YYYYMMDD = ARGV.shift || '20*' # Allow override of minutes to process
 
 TIME_DIFF = (ARGV.shift || '300').to_i # Allow override of seconds of time diff (WHIMSY-204) for testing
 
 MINUTES_NAME = "board_minutes_#{YYYYMMDD}.txt"
-MINUTES_PATH = File.join(SVN_SITE_RECORDS_MINUTES, "*", MINUTES_NAME)
+MINUTES_PATH = File.join(SVN_SITE_RECORDS_MINUTES, '*', MINUTES_NAME)
 
 Wunderbar.info "Processing minutes matching #{MINUTES_NAME}"
 
@@ -85,7 +88,7 @@ if File.exist? INDEX_FILE
   end
 end
 
-Wunderbar.info "Updating files"
+Wunderbar.info 'Processing input files'
 
 # mapping of committee names to canonical names (generally from ldap)
 canonical = Hash.new {|hash, name| name}
@@ -116,7 +119,7 @@ if File.exist?(local_copy) && (Time.now - File.stat(local_copy).mtime < 3600)
   Wunderbar.info "Using #{local_copy}"
   cinfo = JSON.parse(File.read(local_copy))
 else
-  Wunderbar.info "Fetching remote copy of committee-info.json"
+  Wunderbar.info 'Fetching remote copy of committee-info.json'
   response = Net::HTTP.get_response(URI(DATAURI))
   response.value() # Raises error if not OK
   cinfo = JSON.parse(response.body)
@@ -138,17 +141,17 @@ get = Net::HTTP::Get.new CALENDAR.request_uri
 $calendar = Nokogiri::HTML(http.request(get).body.gsub('&raquo', '&#187;').gsub('&nbsp;', '&#160;'))
 
 # Link to headerlink css
-link = Nokogiri::XML::Node.new "link", $calendar
+link = Nokogiri::XML::Node.new 'link', $calendar
 link.set_attribute('rel', 'stylesheet')
 link.set_attribute('href', 'https://www.apache.org/css/headerlink.css')
 $calendar.at('head').add_child(link)
 
 # add some style
-style = Nokogiri::XML::Node.new "style", $calendar
+style = Nokogiri::XML::Node.new 'style', $calendar
 style.content = %{
   table {
     border: 1px solid #ccc;
-    margin-botton: 10px;
+    margin-bottom: 10px;
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
@@ -202,7 +205,8 @@ def name_changes(title)
   title.sub! 'Geroniomo', 'Geronimo'
   title.sub! 'iBatis', 'iBATIS'
   title.sub! 'infrastructure', 'Infrastructure'
-  title.sub! 'ISIS', 'Isis'
+  title.sub! 'ISIS', 'Causeway'
+  title.sub! 'Isis', 'Causeway'
   title.sub! 'IVY', 'Ivy'
   title.sub! 'JackRabbit', 'Jackrabbit'
   title.sub! 'James', 'JAMES'
@@ -212,6 +216,7 @@ def name_changes(title)
   title.sub! 'log4php', 'Log4php'
   title.sub! 'Lucene.NET', 'Lucene.Net'
   title.sub! 'lucene4c', 'Lucene4c'
+  title.sub! 'MesaTEE', 'Teaclave'
   title.sub! 'Ode', 'ODE'
   title.sub! 'ODFToolkit', 'ODF Toolkit'
   title.sub! 'Open for Business', 'OFBiz'
@@ -226,6 +231,7 @@ def name_changes(title)
   title.sub! 'PRC', 'Public Relations'
   title.sub! 'Public Relations Commitee', 'Public Relations'
   title.sub! 'Quarks', 'Edgent'
+  title.sub! 'SensSoft', 'Flagon'
   title.sub! 'Servicecomb', 'ServiceComb'
   title.sub! 'Singa', 'SINGA'
   title.sub! 'Socialsite', 'SocialSite'
@@ -235,6 +241,7 @@ def name_changes(title)
   title.sub! 'Stratosphere', 'Flink'
   title.sub! 'SystemML', 'SystemDS'
   title.sub! 'TCL', 'Tcl'
+  title.sub! 'TubeMQ', 'InLong'
   title.sub! 'Web services', 'Web Services'
   title.sub! 'Zest', 'Polygene'
   title.sub! "Infrastructure (President's)", 'Infrastructure'
@@ -252,8 +259,6 @@ def name_changes(title)
   title.sub! %r{Security$}, 'Security Team'
 end
 
-# Dir.chdir(SVN_SITE_RECORDS_MINUTES) { system 'svn update' }
-
 agenda = {}
 
 posted = Dir[MINUTES_PATH].sort
@@ -270,6 +275,7 @@ seen={}
     Wunderbar.warn "Already processed #{seen[date]}; skipping #{txt}"
     next
   end
+  Wunderbar.info "Parsing input for #{date}"
   seen[date] = txt
   minutes = open(txt) {|file| file.read}
   pending = {}
@@ -279,7 +285,7 @@ seen={}
     -{41}\n                        # separator
     Attachment\s\s?(\w+):[ ](.+?)\n # Attachment, Title
     (.)(.*?)\n                     # separator, report
-    (?=-{41,}\n(?:End|Attach))     # separator
+    (?=[-_]{41,}\n(?:End|Attach))     # separator
   /mx).each do |attach,title,cont,text|
 
     # We need to keep the start of the second line.
@@ -292,12 +298,19 @@ seen={}
       end
     end
 
+    owners = nil
+    if title =~ /^Report from the(?: VP of)? (.+)/i
+      title = $1
+      if title =~ /^(.+?) +\[([^\]]+)\]/
+          title = $1
+          owners = $2
+      end
+    end
     title.sub! /Special /, ''
     title.sub! /Requested /, ''
     title.sub! /(^| )Report To The Board( On)?( |$)/i, ''
     title.sub! /^Board Report for /, ''
     title.sub! /^Status [Rr]eport for (the )?/, ''
-    title.sub! /^Report from the VP of /, ''
     title.sub! /^Report from the /i, ''
     title.sub! /^Status report for the /i, ''
     title.sub! /^Apache /, ''
@@ -315,9 +328,10 @@ seen={}
     next if text.strip.empty? and title =~ /Intentionally (left )?Blank/i
     next if text.strip.empty? and title =~ /There is No/i
 
-    report = pending[attach] || OpenStruct.new
+    report = pending[attach] ||= OpenStruct.new
     report.meeting = date
     report.attach = attach
+    report.owners ||= owners if owners
     report.title = title.strip #.downcase
     report.text = text
 
@@ -341,14 +355,17 @@ seen={}
       report.attach = '@' + attach
     end
 
-    pending[attach] = report
-
     if title == 'Incubator' and text
       sections = text.split(/\nStatus [rR]eport (.*)\n=+\n/)
-      # Some minutes have a 'Detailed Reports' header before the first podling report
+      # Some early 2012 minutes have a 'Detailed Reports' header before the first podling report
+      # i.e. the podling reports follow the line
+      # '-------------------- Detailed Reports --------------------'
+      # instead of the following
+      # '--------------------'
+      # Some reports include trailing spaces after the ----
       # podling header may now be prefixed with ## (since June 2019)
       # Also there may be a blank line before the ##
-      sections = text.split(/\n[-=][-=]+(?: Detailed Reports ---+)?\n(?:\n?##)?\s*([a-zA-Z].*)\n\n/) if sections.length < 9
+      sections = text.split(/\n[-=][-=]+(?: Detailed Reports ---+)?\s*\n(?:\n?##)?\s*([a-zA-Z].*)\n\n/) if sections.length < 9
       sections = [''] if sections.include? 'FAILED TO REPORT'
       sections = text.split(/\n(\w+)\n-+\n\n/) if sections.length < 9
       sections = text.split(/\n=+\s+([\w.]+)\s+=+\n+/) if sections.length < 9
@@ -421,32 +438,34 @@ seen={}
     (.*?)\n                           # comments
     \s\s\s\s?\w                       # separator
   /mx).each do |owners,attach,comments|
-    report = pending[attach] || OpenStruct.new
+    report = pending[attach] ||= OpenStruct.new
     report.meeting = date
     report.attach = attach
     report.owners = owners
-    report.comments = comments.strip
-    pending[attach] = report
+    cs = comments.strip
+    report.comments = cs if cs.length > 0
   end
 
   # fill in comments from missing reports
-  ['Committee', 'Additional Officer'].each do |section|
+  # TODO: temporarily omit Additional Officer processing as it generates some incorrect ownership
+  ['Committee', '_Additional Officer_'].each do |section|
     reports = minutes[/^ \d\. #{section} Reports(\s*(\n|  .*\n)+)/,1]
     next unless reports
     reports.split(/^    (\w+)\./)[1..-1].each_slice(2) do |attach, comments|
-      next if attach.length > 2
+      next if attach.length > 2 # Why?
+      next if comments.include? 'See Attachment' # handled above
       owners = comments[/\[([^\n]+)\]/,1]
-      next if comments.include? 'See Attachment'
-      comments.sub! /.*\s+\n/, ''
+      comments.sub!(/.*\s+\n/, '')
       next if comments.empty?
+      # TODO: This does not work properly
       attach = ('A'..attach).count.to_s if section == 'Additional Officer'
 
-      report = pending[attach] || OpenStruct.new
+      report = pending[attach] ||= OpenStruct.new
       report.meeting = date
       report.attach = attach
       report.owners = owners
-      report.comments = comments.strip
-      pending[attach] = report
+      cs = comments.strip
+      report.comments = cs if cs.length > 0
     end
   end
 
@@ -503,6 +522,7 @@ seen={}
         end
 
         title.sub! 'VP, Data Privacy', 'VP Data Privacy'
+        title.sub! /Executive Session \(\d\d.*?\)/, 'Executive Session' # Drop times from titles
 
         report = OpenStruct.new
         report.title = title.gsub(/\s+/, ' ')
@@ -550,6 +570,7 @@ seen={}
     next if title.count("\n")>1
     report = OpenStruct.new
     title.sub! /(^|\n)\s*Resolution R\d:/, ''
+    title.sub! 'Standardise the privacy policy for Foundation web sites', 'Standardise privacy policy for foundation websites'
     title.sub!(/^(?:Proposed )?Resolution (\[R\d\]|to|for) ./) {|c| c[-1..-1].upcase}
     title.sub! /\.$/, ''
     report.title ||= title.strip
@@ -686,9 +707,9 @@ seen={}
       title.sub! 'Executive VP', 'Executive Vice President'
       title.sub! 'Exec. V.P. and Secretary', 'Secretary'
       title.sub! 'Vice Chairman', 'Vice Chair'
-      title.sub! 'Acting Chairman', 'Acting Chair'
+      title.sub! 'Acting Chairman', 'Board Chair' # merge report(s) from acting chair
       title.sub! 'Chairman', 'Board Chair'
-    
+
       report = OpenStruct.new
       if title.include? ' ['
         report.owners = title.split(' [').last.sub(']','').strip
@@ -706,6 +727,20 @@ seen={}
     end
   end
 
+  if DUMP_PENDING
+    puts 'Dump of pending data for ' + date
+    pending.each do |k,v|
+      puts "#{k} #{k == v.attach ? '==' : '!='} #{v.attach}"
+      puts v.title
+      puts "O: #{v.owners}" if v.owners
+      puts "S: #{v.subtitle}" if v.subtitle
+      p "C: #{v.comments}" if v.comments
+      text = v.text
+      puts "#{text.size} #{text.split("\n",2)[0]}"
+      puts ''
+    end
+  end
+
   # Add to the running tally
   pending.each_value do |report|
     next if not report.title or report.title.empty?
@@ -720,7 +755,14 @@ seen={}
   end
 end
 
-puts
+if DUMP_AGENDA
+  puts 'Dump of agenda data for this run'
+  agenda.each do |title, reports|
+    p [reports.length > 1 ? '>1' : '=1', reports.last.attach[0..1], reports.length, title]
+  end
+end
+
+Wunderbar.info 'Starting to generate output'
 
 # determine link for each report
 link = {}
@@ -744,7 +786,7 @@ def layout(title = nil)
     $calendar.at('title').content = "Board Meeting Minutes - #{title}"
 #   $calendar.at('h2').content = "Board Meeting Minutes - #{title}"
   else
-    $calendar.at('title').content = "Board Meeting Minutes"
+    $calendar.at('title').content = 'Board Meeting Minutes'
 #   $calendar.at('h2').content = "Board Meeting Minutes"
   end
 
@@ -766,10 +808,10 @@ def layout(title = nil)
         x.text! "This was extracted (@ #{STAMP}) from a list of"
       else # main index, which is always replaced if any input files have changed
         # text below must agree with code that updates the index when no changes have occurred
-        x.text! "Last run: #{STAMP}. The data is extracted from a list of"
+        x.text! "Last collate_minutes.rb run: #{STAMP}. The data is extracted from a list of"
       end
       x.a 'minutes', :href => 'http://www.apache.org/foundation/records/minutes/'
-      x.text! "which have been approved by the Board."
+      x.text! 'which have been approved by the Board.'
       x.br
       x.strong 'Please Note'
       # squiggly heredoc causes problems for Eclipse plugin, but leading spaces don't matter here
@@ -778,6 +820,14 @@ def layout(title = nil)
       beginning of every Board meeting; therefore, the list below does not
       normally contain details from the minutes of the most recent Board meeting.
       EOT
+      unless NOWARN_LAYOUT
+        x.br
+        x.br
+        x.strong 'WARNING: these pages may omit some original contents of the minutes.'
+        x.br
+        x.text 'This is due to changes in the layout of the source minutes over the years.'
+        x.text 'Fixes are being worked on.'
+      end
     end
   }
 
@@ -826,13 +876,13 @@ agenda.sort.each do |title, reports|
       _id = report.meeting.gsub('_', '-')
       x.h2 id: _id do
         if report.posted
-          href = "http://apache.org/foundation/records/minutes/" +
+          href = 'http://apache.org/foundation/records/minutes/' +
             "#{report.meeting[0...4]}/board_minutes_#{report.meeting}.txt"
         else
           href = ASF::SVN.svnpath!('foundation_board', "board_minutes_#{report.meeting}.txt")
         end
 
-        x.a Date.parse(report.meeting.gsub('_','/')).strftime("%d %b %Y"),
+        x.a Date.parse(report.meeting.gsub('_','/')).strftime('%d %b %Y'),
           href: href, id: "minutes_#{report.meeting}"
         if report.owners
           x.span "[#{report.owners}]", :style => 'font-size: 14px'
@@ -843,8 +893,8 @@ agenda.sort.each do |title, reports|
       x.h3 report.subtitle if report.subtitle
 
       if report.posted
-        text = report.text.gsub(/^\t+/) {|tabs| " " * (8*tabs.length)}
-        text.gsub!(/ *$/, "")
+        text = report.text.gsub(/^\t+/) {|tabs| ' ' * (8*tabs.length)}
+        text.gsub!(/ *$/, '')
         indent = text.scan(/^([ ]+)/).flatten.min.to_s.length - 1
         text.gsub! /^#{' '*indent}/, '' if indent > 0
         text = $1 + text if text =~ /\A\w.*\n(\s+)/
@@ -854,7 +904,7 @@ agenda.sort.each do |title, reports|
 
         if report.comments and report.comments.strip != ''
           report.comments.split(/\n\s*\n/).each do |p|
-            x.p p, :style => "width: 40em"
+            x.p p, :style => 'width: 40em'
           end
         elsif text.strip.empty?
           if report.subtitle and not report.subtitle.empty?
@@ -875,17 +925,11 @@ agenda.sort.each do |title, reports|
   end
 
   dest = File.join(SITE_MINUTES, link[title])
-  unless File.exist?(dest) and remove_date(File.read(dest)) == remove_date(page)
+  if force or !File.exist?(dest) or (remove_date(File.read(dest)) != remove_date(page))
     Wunderbar.info  "Writing #{link[title]}"
     open(dest, 'w') {|file| file.write page}
 #  else
 #    Wunderbar.info  "Not updating #{link[title]}"
-  end
-end
-
-if DUMP_AGENDA
-  agenda.each do |title, reports|
-    p [reports.length > 1 ? '>1' : '=1', reports.last.attach[0..1], reports.length, title]
   end
 end
 
@@ -905,7 +949,7 @@ end
 # output index
 agenda = agenda.sort_by {|title, reports| title.downcase}
 page = layout do |x|
-  x.h2 "Executive Officer Reports", :id => 'executive'
+  x.h2 'Executive Officer Reports', :id => 'executive'
   x.ul do
     agenda.each do |title, reports|
       next unless reports.last.attach =~ /^\*/
@@ -915,7 +959,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Additional Officer Reports", :id => 'officer'
+  x.h2 'Additional Officer Reports', :id => 'officer'
   x.ul do
     agenda.each do |title, reports|
       next unless reports.last.attach =~ /^\d/
@@ -925,7 +969,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Committee Reports", :id => 'committee'
+  x.h2 'Committee Reports', :id => 'committee'
   list = []
   agenda.each do |title, reports|
     next unless reports.last.attach =~ /^[A-Z]/
@@ -957,7 +1001,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Podling Reports", :id => 'podling'
+  x.h2 'Podling Reports', :id => 'podling'
   list = []
   agenda.each do |title, reports|
     next unless reports.last.attach =~ /^[.]/
@@ -990,7 +1034,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Repeating Special Orders", :id => 'orders'
+  x.h2 'Repeating Special Orders', :id => 'orders'
   x.ul do
     agenda.each do |title, reports|
       next unless reports.last.attach =~ /^@/
@@ -1000,7 +1044,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Other Attachments, Special Orders, and Discussions", :id => 'other'
+  x.h2 'Other Attachments, Special Orders, and Discussions', :id => 'other'
   x.ul do
     other = {}
     agenda.each do |title, reports|
@@ -1014,7 +1058,7 @@ page = layout do |x|
       end
     end
   end
-  x.h2 "Other Agenda Items", :id => 'agenda'
+  x.h2 'Other Agenda Items', :id => 'agenda'
   x.ul do
     agenda.each do |title, reports|
       next unless reports.last.attach =~ /^\+/

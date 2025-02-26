@@ -10,10 +10,10 @@ _html do
       title: 'ASF Non-PMC Group list',
       relatedtitle: 'See Other Group Listings',
       related: {
-        "/roster/committee/" => "Active projects at the ASF",
-        "/roster/ppmc/" => "Active podlings at the ASF",
-        "/roster/nonpmc/" => "ASF Committees (non-PMC)",
-        "/roster/orgchart/" => "High level org chart",
+        '/roster/committee/' => 'Active projects at the ASF',
+        '/roster/ppmc/' => 'Active podlings at the ASF',
+        '/roster/nonpmc/' => 'ASF Committees (non-PMC)',
+        '/roster/orgchart/' => 'High level org chart',
       },
       helpblock: -> {
         _div.row do
@@ -64,7 +64,7 @@ _html do
             @groups.each do |name, type|
               next if name == 'apldap'
               _tr_ do
-                _td {_a name, href: "group/#{name}"}
+                _td {_a name, href: "group/#{name}?type=#{type}"}
                 _td type
               end
             end
@@ -72,8 +72,9 @@ _html do
         end
       end
     end
+
+    _script %{
+      $(".table").stupidtable();
+    }
   end
-  _script %{
-    $(".table").stupidtable();
-  }
 end

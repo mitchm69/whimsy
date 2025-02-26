@@ -42,8 +42,8 @@ class Cache
   #
   # Returns:
   # - uri (after redirects)
-  # - content
-  # - status: nocache, recent, updated, missing or no last mod/etag
+  # - content - or response if status is error
+  # - status: nocache, recent, updated, unchanged, error, cachemiss or no last mod/etag
   def get(url)
     if not @enabled
       uri, res = fetch(url)
@@ -61,8 +61,7 @@ class Cache
     if data and (lastmod or etag)
       cond = {}
       cond['If-Modified-Since'] = lastmod if lastmod
-      # Allow for Apache Bug 45023
-      cond['If-None-Match'] = etag.gsub(/-gzip"$/,'"') if etag
+      cond['If-None-Match'] = etag if etag
       uri, res = fetch(url, cond)
       if res.is_a?(Net::HTTPSuccess)
         write_cache(url, res)
@@ -77,8 +76,12 @@ class Cache
       end
     else
       uri, res = fetch(url)
-      write_cache(url, res)
-      return uri, res.body, data ? 'no last mod/etag' : 'missing'
+      if res.is_a?(Net::HTTPSuccess)
+        write_cache(url, res)
+        return uri, res.body, data ? 'no last mod/etag' : 'cachemiss'
+      else
+        return nil, res, 'error'
+      end
     end
   end
 
@@ -89,7 +92,7 @@ class Cache
     begin
       FileUtils.mkdir_p path
       Wunderbar.info "Created the cache #{path}"
-      raise Exception.new("Not writable") unless File.writable?(path)
+      raise Exception.new('Not writable') unless File.writable?(path)
     rescue Exception => e
       Wunderbar.warn "Could not create the cache #{path} - #{e}"
       @enabled = false
@@ -107,6 +110,7 @@ class Cache
       options.each do |k,v|
         request[k] = v
       end
+      Wunderbar.debug "Request: #{request.to_hash.inspect}"
       response = http.request(request)
       Wunderbar.debug "Headers: #{response.to_hash.inspect}"
       Wunderbar.debug response.code

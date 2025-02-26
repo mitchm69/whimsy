@@ -4,7 +4,7 @@
 
 class PMCMod < Vue
   mixin ProjectMod
-  options mod_tag: "pmcmod", mod_action: 'actions/committee'
+  options mod_tag: 'pmcmod', mod_action: 'actions/committee'
 
   def initialize
     @people = []
@@ -39,27 +39,6 @@ class PMCMod < Vue
                 end
               end
             end
-
-            # add to PMC button is only shown if every person is not on the PMC
-            if @people.all? {|person| !@@project.members.include? person.id}
-              _p do
-                _br
-                _b do
-                  _ 'Before adding a new PMC member, ' 
-                  _a 'email notification must be sent to the Board mailing list',
-                    href: 'https://www.apache.org/dev/pmc.html#send-the-board-a-notice-of-the-vote-to-add-someone'
-                  _ ' (cc: the PMC private@ mailing list).'
-                  _br
-                  _ 'There follows a '
-                  _a '72 hour NOTICE period',
-                    href: 'https://www.apache.org/dev/pmc.html#notice_period'
-                end
-                _label do
-                  _span 'Has the NOTICE email been received by the board list and has the NOTICE period elapsed?'
-                  _input type: 'checkbox', checked: @notice_elapsed
-                end
-              end
-            end
           end
 
           _div.modal_footer do
@@ -70,9 +49,9 @@ class PMCMod < Vue
 
             # show add to PMC button only if every person is not on the PMC
             if @people.all? {|person| !@@project.members.include? person.id}
-              _button.btn.btn_primary "Add to PMC",
+              _button.btn.btn_primary 'Add to PMC',
                 data_action: 'add pmc info',
-                onClick: self.post, disabled: (@people.empty? or not @notice_elapsed)
+                onClick: self.post, disabled: (@people.empty?)
             end
 
             # remove from all relevant locations
@@ -88,7 +67,7 @@ class PMCMod < Vue
               data_action: "remove #{remove_from.join(' ')}"
 
             if @people.all? {|person| @@project.members.include? person.id}
-              _button.btn.btn_warning "Remove from PMC only",
+              _button.btn.btn_warning 'Remove from PMC only',
                 data_action: 'remove pmc info',
                 onClick: self.post
             end
